@@ -881,11 +881,11 @@
                                 <div style="display:grid; grid-template-columns:1fr 1.2fr; gap:10px;">
                                     <div class="form-field" style="margin:0;">
                                         <label>Nombre completo</label>
-                                        <input type="text" id="poNameInput" placeholder="Nombre" maxlength="80">
+                                        <input type="text" id="poNameInput" placeholder="Ej. Ana López" maxlength="80">
                                     </div>
                                     <div class="form-field" style="margin:0;">
                                         <label>Correo electrónico</label>
-                                        <input type="email" id="poEmailInput" placeholder="@empresa.com" maxlength="120">
+                                        <input type="email" id="poEmailInput" placeholder="ana.lopez@empresa.com" maxlength="120">
                                     </div>
                                 </div>
                                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
@@ -1053,7 +1053,7 @@
                                 </div>
                             </div>
                             <div class="settings-row">
-                                <div class="label-group"><strong>Contraseña de respaldo del Administrador Principal</strong><span>Obligatoria al registrar al Administrador Principal</span></div>
+                                <div class="label-group"><strong>Contraseña de respaldo del Administrador Principal</strong><span>Obligatoria al registrar al Administrador Principal (sin clave en código)</span></div>
                                 <div class="control" style="display:flex; gap:8px;">
                                     <input type="password" id="backupPasswordInput" placeholder="Nueva contraseña">
                                     <button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" id="savePasswordBtn">Guardar</button>
@@ -1257,28 +1257,50 @@
         if (showToastMsg) showToast('Configuración guardada');
     }
 
+    let _cloudSyncWarned = false;
     async function syncBiaSettingsToCloud() {
+        if (!supabaseClient) initSupabase();
         if (!supabaseClient) return;
         try {
             const payload = JSON.parse(JSON.stringify(biaConfig));
             delete payload.backupPassword;
-            await supabaseClient.from('bia_settings').upsert({
+            const { error } = await supabaseClient.from('bia_settings').upsert({
                 id: 1,
                 data: payload,
                 updated_at: new Date().toISOString()
             });
-        } catch (_) {}
+            if (error && !_cloudSyncWarned) {
+                _cloudSyncWarned = true;
+                console.warn('Supabase bia_settings error:', error);
+                mostrarNotificacion('Aviso: revisa las políticas/tabla bia_settings en Supabase para sincronizar entre dispositivos', 'warning');
+            }
+        } catch (err) {
+            if (!_cloudSyncWarned) {
+                _cloudSyncWarned = true;
+                console.warn('Supabase bia_settings exception:', err);
+            }
+        }
     }
 
     async function pullBiaSettingsFromCloud() {
+        if (!supabaseClient) initSupabase();
         if (!supabaseClient) return;
         try {
             const { data, error } = await supabaseClient.from('bia_settings').select('data').eq('id', 1).maybeSingle();
             if (!error && data && data.data && typeof data.data === 'object') {
                 biaConfig = { ...BIA_DEFAULT_CONFIG, ...data.data };
+                if (!Array.isArray(biaConfig.faces)) biaConfig.faces = [];
+                if (!Array.isArray(biaConfig.processOwners)) biaConfig.processOwners = [];
+                if (!Array.isArray(biaConfig.intruderLogs)) biaConfig.intruderLogs = [];
                 delete biaConfig.backupPassword;
                 localStorage.setItem('bia_app_config_v2', JSON.stringify(biaConfig));
                 applyBiaConfig();
+                if (!currentUserRole) renderCarouselLogin();
+                if ($id('settingsModal')?.classList.contains('active')) {
+                    renderPoPermissionsList();
+                    renderManagerFaceList();
+                    renderAccessAndIntruderLogs();
+                }
             }
         } catch (_) {}
     }
@@ -2260,7 +2282,7 @@
             title: 'Process Owner',
             icon: 'fa-clipboard-list',
             description: 'Consulta, captura y actualización de procesos en las matrices asignadas.',
-            badge: 'Acceso a Mapa de Procesos',
+            badge: 'Operación BIA',
             color: '#1d9d4f',
             colorEnd: '#15803d'
         },
@@ -2387,6 +2409,7 @@
             }];
             biaConfig.backupPasswordHash = hashPassword(p1);
             saveBiaConfig();
+            await syncBiaSettingsToCloud();
             showToast('Administrador Principal registrado');
             iniciarSesion('manager', true, name);
         };
@@ -4902,9 +4925,21 @@
         isClosingSession = false;
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
+    async function syncCloudStateBeforeLogin() {
+        try {
+            if (!supabaseClient) initSupabase();
+            if (supabaseClient) {
+                await pullBiaSettingsFromCloud();
+                await pullMatricesMetaFromCloud();
+                suscribirCambiosEnTiempoReal();
+            }
+        } catch (_) {}
+    }
+
+    document.addEventListener('DOMContentLoaded', async function() {
         initCustomDialogListeners();
         setupSettingsListeners();
+        loadMatricesState();
         applyBiaConfig();
 
         if (cargarSesion()) {
@@ -4912,6 +4947,10 @@
         } else {
             renderCarouselLogin();
             runIntroAnimation();
+            await syncCloudStateBeforeLogin();
+            loadMatricesState();
+            applyBiaConfig();
+            renderCarouselLogin();
         }
     });
 </script>
