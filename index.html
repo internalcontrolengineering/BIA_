@@ -722,8 +722,9 @@
      ========================================== -->
 <div id="mainApp" style="display: none;">
     <div class="max-w-[1600px] mx-auto px-3 md:px-6 py-4 md:py-6">
-        <div id="processOwnerBanner" class="hidden mb-4 inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-full" style="background: var(--ok-soft); color: var(--ok);">
-            <i class="fas fa-user-check mr-1"></i> Sesión verificada: <strong id="poActiveName">Process Owner</strong>
+        <div id="processOwnerBanner" class="hidden mb-4 inline-flex items-center gap-2 flex-wrap text-xs font-medium px-3.5 py-1.5 rounded-full" style="background: var(--ok-soft); color: var(--ok);">
+            <span><i class="fas fa-user-check mr-1"></i> Sesión verificada: <strong id="poActiveName">Process Owner</strong></span>
+            <span id="poPermCountdownPill" class="px-2.5 py-0.5 rounded-full font-bold tabular-nums" style="background: var(--bg-elev); color: var(--text); border: 1px solid var(--line-2);"><i class="fas fa-hourglass-half mr-1"></i>Calculando vigencia…</span>
         </div>
 
         <!-- Pestañas de modo principal (Mapa / Carga Masiva) -->
@@ -888,33 +889,18 @@
                                         <input type="email" id="poEmailInput" placeholder="@empresa.com" maxlength="120">
                                     </div>
                                 </div>
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
-                                    <div class="form-field" style="margin:0;">
-                                        <label>Matriz asignada</label>
-                                        <select id="poMatrixSelect"></select>
+                                <div style="margin-top:12px;">
+                                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                                        <label style="font-size:12.5px; font-weight:700; color:var(--text-2); margin:0;">
+                                            <i class="fas fa-table" style="color:var(--accent);"></i> Matrices asignadas, permiso y temporalidad individual
+                                        </label>
+                                        <div style="display:flex; gap:6px;">
+                                            <button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" id="poToggleAllMatricesBtn" style="height:26px; font-size:11.5px; padding:0 10px;">
+                                                <i class="fas fa-check-double"></i> <span>Seleccionar todas</span>
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div class="form-field" style="margin:0;">
-                                        <label>Nivel de permiso</label>
-                                        <select id="poAccessSelect">
-                                            <option value="edit">Consultar y editar procesos</option>
-                                            <option value="view">Solo consulta (lectura)</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div style="display:grid; grid-template-columns:0.8fr 1fr; gap:10px; margin-top:10px;">
-                                    <div class="form-field" id="poExpiryAmtWrap" style="margin:0;">
-                                        <label>Vigencia</label>
-                                        <input type="number" id="poExpiryAmt" min="1" max="3650" value="30">
-                                    </div>
-                                    <div class="form-field" style="margin:0;">
-                                        <label>Unidad / Modalidad</label>
-                                        <select id="poExpiryUnit">
-                                            <option value="minutes">Minutos</option>
-                                            <option value="hours">Horas</option>
-                                            <option value="days" selected>Días</option>
-                                            <option value="permanent">Permanente (sin vencimiento)</option>
-                                        </select>
-                                    </div>
+                                    <div id="poMatricesBuilderList" style="display:flex; flex-direction:column; gap:8px; max-height:240px; overflow-y:auto; padding:2px;"></div>
                                 </div>
                                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
                                     <button type="button" class="ui-btn ui-btn-secondary ui-btn-sm hidden" id="poCancelEditBtn">Cancelar edición</button>
@@ -1060,6 +1046,12 @@
                                 </div>
                             </div>
                             <div class="settings-row">
+                                <div class="label-group"><strong>Edición en Matriz General (Consolidada)</strong><span>Permite habilitar o deshabilitar la edición directa de registros desde la pestaña Matriz General.</span></div>
+                                <div class="control">
+                                    <label class="switch"><input type="checkbox" id="consolidatedEditableToggle" checked><span class="slider"></span></label>
+                                </div>
+                            </div>
+                            <div class="settings-row">
                                 <div class="label-group"><strong>Requerir PIN / Registro a Process Owners</strong><span>Si está activo, exige validar PIN o credenciales asignadas.</span></div>
                                 <div class="control">
                                     <label class="switch"><input type="checkbox" id="requirePoPinToggle"><span class="slider"></span></label>
@@ -1171,6 +1163,53 @@
     </div>
 </div>
 
+
+<!-- Modal gestión de Process Owner registrado (doble clic / doble tap) -->
+<div class="ms-modal-overlay" id="poRegisteredManageModal">
+    <div class="ms-modal-content" style="max-width:460px;">
+        <h2><i class="fas fa-user-cog" style="color:var(--accent);"></i> <span id="poRegManageName">Process Owner</span></h2>
+        <p style="font-size:12.5px; color:var(--text-2); margin-bottom:14px;" id="poRegManageEmail"></p>
+
+        <div style="background:var(--bg-card-subtle); border:1px solid var(--line-2); border-radius:14px; padding:14px; margin-bottom:12px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:8px; color:var(--text);">
+                <i class="fas fa-key" style="color:var(--accent);"></i> Ver contraseña registrada
+            </div>
+            <p style="font-size:12px; color:var(--text-2); margin-bottom:10px;">
+                Ingresa la contraseña de respaldo del Administrador Principal para visualizar la contraseña registrada del usuario.
+            </p>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <input type="password" id="poRevealAdminPassInput" placeholder="Contraseña del Administrador" style="flex:1; padding:9px 12px; border-radius:10px; border:1px solid var(--line-2); background:var(--bg-elev); font-size:13px; color:var(--text); outline:none;">
+                <button type="button" class="ui-btn ui-btn-primary ui-btn-sm" id="poRevealPwdBtn">
+                    <i class="fas fa-eye"></i> Ver
+                </button>
+            </div>
+            <div id="poRevealPwdError" class="hidden" style="color:var(--danger); font-size:11.5px; font-weight:600; margin-top:6px;">
+                Contraseña de Administrador incorrecta.
+            </div>
+            <div id="poRevealedPwdBox" class="hidden" style="margin-top:10px; padding:10px 12px; border-radius:10px; background:var(--bg-elev); border:1px solid var(--line-2); display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <span style="font-size:12.5px; color:var(--text-2);">Contraseña registrada:</span>
+                <strong id="poRevealedPwdValue" style="font-size:13.5px; color:var(--accent); user-select:all; -webkit-user-select:all;">—</strong>
+            </div>
+        </div>
+
+        <div style="background:var(--bg-card-subtle); border:1px solid var(--line-2); border-radius:14px; padding:14px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:6px; color:var(--text);">
+                <i class="fas fa-envelope" style="color:var(--accent);"></i> Enviar correo con contraseña
+            </div>
+            <p style="font-size:12px; color:var(--text-2); margin-bottom:10px;">
+                Envía un correo al usuario con su contraseña e infórmale que puede solicitar un nuevo PIN para restablecerla y cambiarla.
+            </p>
+            <button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" id="poSendPwdEmailBtn" style="width:100%;">
+                <i class="fas fa-paper-plane"></i> Enviar correo con contraseña y aviso de nuevo PIN
+            </button>
+        </div>
+
+        <div class="ms-modal-actions">
+            <button type="button" class="ui-btn ui-btn-primary" id="poCloseRegManageBtn">Cerrar</button>
+        </div>
+    </div>
+</div>
+
 <!-- Zoom de foto (Procesos Owners e Intentos Denegados) -->
 <div class="thumb-zoom-overlay" id="thumbZoomOverlay" onclick="this.classList.remove('active')">
     <div class="thumb-zoom-box" onclick="event.stopPropagation()">
@@ -1218,6 +1257,7 @@
         backupPasswordHash: '',
         cameraEnabled: true,
         requirePoPin: false,
+        consolidatedEditable: true,
         sessionTimeoutMinutes: 20,
         faces: [],
         processOwners: [],
@@ -1288,14 +1328,34 @@
         try {
             const { data, error } = await supabaseClient.from('bia_settings').select('data').eq('id', 1).maybeSingle();
             if (!error && data && data.data && typeof data.data === 'object') {
+                const prevLocalPos = Array.isArray(biaConfig.processOwners) ? biaConfig.processOwners : [];
                 biaConfig = { ...BIA_DEFAULT_CONFIG, ...data.data };
                 if (!Array.isArray(biaConfig.faces)) biaConfig.faces = [];
                 if (!Array.isArray(biaConfig.processOwners)) biaConfig.processOwners = [];
                 if (!Array.isArray(biaConfig.intruderLogs)) biaConfig.intruderLogs = [];
+                // Conservar cualquier registro local con pinVersion más reciente que la nube
+                biaConfig.processOwners = biaConfig.processOwners.map(remotePo => {
+                    const localMatch = prevLocalPos.find(lp => lp.id === remotePo.id);
+                    if (localMatch && (
+                        Number(localMatch.pinVersion || 0) > Number(remotePo.pinVersion || 0) ||
+                        Number(localMatch.registeredAt || 0) > Number(remotePo.registeredAt || 0)
+                    )) {
+                        return { ...remotePo, ...localMatch };
+                    }
+                    if (localMatch && !remotePo.encodedPwd && localMatch.encodedPwd) {
+                        return { ...remotePo, encodedPwd: localMatch.encodedPwd, plainPwd: localMatch.plainPwd };
+                    }
+                    return remotePo;
+                });
                 delete biaConfig.backupPassword;
                 localStorage.setItem('bia_app_config_v2', JSON.stringify(biaConfig));
                 applyBiaConfig();
-                if (!currentUserRole) renderCarouselLogin();
+                if (!currentUserRole) {
+                    renderCarouselLogin();
+                    refreshOpenPoSelectorModal();
+                } else {
+                    updateConsolidatedModeUI();
+                }
                 if ($id('settingsModal')?.classList.contains('active')) {
                     renderPoPermissionsList();
                     renderManagerFaceList();
@@ -1394,19 +1454,99 @@
         return Array.isArray(matricesDataMap[activeMatrixId]) ? matricesDataMap[activeMatrixId] : [];
     }
 
+    const ALL_MATRICES_MODE = '__all__';
+    const ONLY_CONSOLIDATED_MODE = '__only_consolidated__';
+
+    function isMatrixEntryExpired(entry) {
+        if (!entry) return true;
+        if (entry.isPermanent || entry.expiry === 'permanent') return false;
+        return !entry.expiry || Date.now() > Number(entry.expiry);
+    }
+
+    function getNormalizedPoMatrixPermissions(po) {
+        if (!po) return {};
+        if (po.matrixPermissions && typeof po.matrixPermissions === 'object' && Object.keys(po.matrixPermissions).length > 0) {
+            const normalized = {};
+            for (const [mId, cfg] of Object.entries(po.matrixPermissions)) {
+                if (!cfg || cfg.enabled === false) continue;
+                let acc = cfg.accessType || po.accessType || 'edit';
+                if (mId === CONSOLIDATED_MATRIX_ID && biaConfig.consolidatedEditable === false) {
+                    acc = 'view';
+                }
+                normalized[mId] = {
+                    enabled: true,
+                    accessType: acc,
+                    isPermanent: !!(cfg.isPermanent || cfg.expiry === 'permanent'),
+                    expiry: (cfg.isPermanent || cfg.expiry === 'permanent') ? 'permanent' : Number(cfg.expiry || po.expiry || 0),
+                    amount: cfg.amount || 30,
+                    unit: cfg.unit || ((cfg.isPermanent || cfg.expiry === 'permanent') ? 'permanent' : 'days')
+                };
+            }
+            return normalized;
+        }
+        const parsed = parsePoMatrixAssignment(po.matrixId);
+        const baseAccess = po.accessType || 'edit';
+        const basePerm = !!(po.isPermanent || po.expiry === 'permanent');
+        const baseExp = basePerm ? 'permanent' : Number(po.expiry || 0);
+        const out = {};
+        if (parsed.mode === 'all') {
+            out[CONSOLIDATED_MATRIX_ID] = { enabled: true, accessType: biaConfig.consolidatedEditable === false ? 'view' : baseAccess, isPermanent: basePerm, expiry: baseExp };
+            matricesList.forEach(m => { out[m.id] = { enabled: true, accessType: baseAccess, isPermanent: basePerm, expiry: baseExp }; });
+        } else if (parsed.mode === 'only_general') {
+            out[CONSOLIDATED_MATRIX_ID] = { enabled: true, accessType: biaConfig.consolidatedEditable === false ? 'view' : baseAccess, isPermanent: basePerm, expiry: baseExp };
+        } else if (parsed.mode === 'single_and_general' && parsed.targetId) {
+            out[CONSOLIDATED_MATRIX_ID] = { enabled: true, accessType: biaConfig.consolidatedEditable === false ? 'view' : baseAccess, isPermanent: basePerm, expiry: baseExp };
+            out[parsed.targetId] = { enabled: true, accessType: baseAccess, isPermanent: basePerm, expiry: baseExp };
+        } else if (parsed.targetId) {
+            out[parsed.targetId] = { enabled: true, accessType: baseAccess, isPermanent: basePerm, expiry: baseExp };
+        }
+        return out;
+    }
+
+    function getActivePoMatrixPermissions(po) {
+        const all = getNormalizedPoMatrixPermissions(po);
+        const active = {};
+        for (const [mId, cfg] of Object.entries(all)) {
+            if (!isMatrixEntryExpired(cfg)) {
+                if (mId === CONSOLIDATED_MATRIX_ID || matricesList.some(m => m.id === mId)) {
+                    active[mId] = cfg;
+                }
+            }
+        }
+        return active;
+    }
+
+    function parsePoMatrixAssignment(matrixId) {
+        const raw = String(matrixId || ALL_MATRICES_MODE);
+        if (raw === ALL_MATRICES_MODE || raw === CONSOLIDATED_MATRIX_ID) {
+            return { mode: 'all', targetId: null };
+        }
+        if (raw === ONLY_CONSOLIDATED_MODE) {
+            return { mode: 'only_general', targetId: null };
+        }
+        if (raw.startsWith('with_general:')) {
+            return { mode: 'single_and_general', targetId: raw.slice('with_general:'.length) };
+        }
+        if (raw.startsWith('single:')) {
+            return { mode: 'single', targetId: raw.slice('single:'.length) };
+        }
+        return { mode: 'single', targetId: raw };
+    }
+
     function getAllowedMatricesForCurrentUser() {
         if (currentUserRole === 'manager') return matricesList;
-        if (currentUserRole === 'processOwner' && activeProcessOwner && activeProcessOwner.matrixId) {
-            if (activeProcessOwner.matrixId === CONSOLIDATED_MATRIX_ID) return matricesList;
-            return matricesList.filter(m => m.id === activeProcessOwner.matrixId);
+        if (currentUserRole === 'processOwner' && activeProcessOwner) {
+            const activeMap = getActivePoMatrixPermissions(activeProcessOwner);
+            return matricesList.filter(m => !!activeMap[m.id]);
         }
         return matricesList;
     }
 
     function canSeeConsolidatedMatrix() {
         if (currentUserRole === 'manager') return true;
-        if (currentUserRole === 'processOwner' && activeProcessOwner && activeProcessOwner.matrixId) {
-            return activeProcessOwner.matrixId === CONSOLIDATED_MATRIX_ID;
+        if (currentUserRole === 'processOwner' && activeProcessOwner) {
+            const activeMap = getActivePoMatrixPermissions(activeProcessOwner);
+            return !!activeMap[CONSOLIDATED_MATRIX_ID];
         }
         return true;
     }
@@ -1564,9 +1704,20 @@
         filtrosRapidos = { unidadNegocio: "", area: "", tipoMacro: "", macroproceso: "", prioridad: "" };
         filtrosColumna = {};
         document.querySelectorAll('.filtro-rapido').forEach(s => s.value = "");
+        updateNavbarRoleControls();
         renderMatricesTabs();
         renderTabla();
         actualizarTodosLosFiltros();
+    }
+
+    function isConsolidatedEditDisabled() {
+        return activeMatrixId === CONSOLIDATED_MATRIX_ID && biaConfig.consolidatedEditable === false;
+    }
+
+    function canEditActiveView() {
+        if (isReadOnlyPo()) return false;
+        if (isConsolidatedEditDisabled()) return false;
+        return true;
     }
 
     function updateConsolidatedModeUI() {
@@ -1574,7 +1725,17 @@
         const notice = $id('consolidatedNotice');
         const addBtn = $id('btnAgregarFila');
         const readOnly = isReadOnlyPo();
-        if (notice) notice.classList.toggle('hidden', !isConsolidated);
+        if (notice) {
+            notice.classList.toggle('hidden', !isConsolidated);
+            if (isConsolidated) {
+                const locked = biaConfig.consolidatedEditable === false;
+                notice.innerHTML = locked
+                    ? `<i class="fas fa-lock mr-1"></i> Vista consolidada (edición deshabilitada por el Administrador)`
+                    : `<i class="fas fa-layer-group mr-1"></i> Vista consolidada (edición habilitada · ordena las pestañas arriba)`;
+                notice.style.background = locked ? 'var(--warn-soft)' : 'var(--accent-soft)';
+                notice.style.color = locked ? 'var(--warn)' : 'var(--accent)';
+            }
+        }
         if (addBtn) {
             addBtn.style.display = (isConsolidated || readOnly) ? 'none' : '';
         }
@@ -1612,6 +1773,7 @@
 
     let dialogResolve = null;
     function customAlert(title, text, icon = 'fa-info-circle', isHtml = false) {
+        initCustomDialogListeners();
         return new Promise(resolve => {
             dialogResolve = resolve;
             $id('customDialogIcon').innerHTML = `<i class="fas ${icon}"></i>`;
@@ -1628,6 +1790,7 @@
     }
 
     function customConfirm(title, text, isDanger = false, okLabel = 'Aceptar', cancelLabel = 'Cancelar') {
+        initCustomDialogListeners();
         return new Promise(resolve => {
             dialogResolve = resolve;
             $id('customDialogIcon').innerHTML = isDanger
@@ -1647,6 +1810,7 @@
     }
 
     function customPrompt(title, text, defaultValue = '', isPassword = false) {
+        initCustomDialogListeners();
         return new Promise(resolve => {
             dialogResolve = resolve;
             $id('customDialogIcon').innerHTML = '<i class="fas fa-pen"></i>';
@@ -1681,12 +1845,13 @@
             $id('customDialogModal').classList.remove('active');
             if (dialogResolve) dialogResolve(null);
         };
-        $id('customDialogInput').addEventListener('keydown', (e) => {
+        $id('customDialogInput').onkeydown = (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
+                e.stopPropagation();
                 $id('customDialogOk').click();
             }
-        });
+        };
     }
 
     function openThumbZoom(src, caption, sub) {
@@ -1825,6 +1990,7 @@
 
         if ($id('cameraToggle')) $id('cameraToggle').checked = biaConfig.cameraEnabled !== false;
         if ($id('requirePoPinToggle')) $id('requirePoPinToggle').checked = !!biaConfig.requirePoPin;
+        if ($id('consolidatedEditableToggle')) $id('consolidatedEditableToggle').checked = biaConfig.consolidatedEditable !== false;
 
         updateLogoPreviews();
     }
@@ -1993,18 +2159,23 @@
         return null;
     }
 
-    function recordIntruderAttempt(thumb, method = 'password') {
+    async function recordIntruderAttempt(thumb, method = 'password') {
+        let finalThumb = thumb || null;
+        if (!finalThumb) {
+            finalThumb = await captureSingleIntruderSnapshot();
+        }
         const now = Date.now();
         const last = biaConfig.intruderLogs[0];
-        if (last && (now - last.timestamp) < 45000 && !thumb) return;
+        if (last && (now - last.timestamp) < 15000 && !finalThumb && last.method === method) return;
         biaConfig.intruderLogs.unshift({
             id: 'intr-' + now,
-            image: thumb || null,
+            image: finalThumb,
             method,
             timestamp: now
         });
         biaConfig.intruderLogs = biaConfig.intruderLogs.slice(0, 40);
         saveBiaConfig();
+        await syncBiaSettingsToCloud();
         renderAccessAndIntruderLogs();
     }
 
@@ -2327,6 +2498,9 @@
 
             const card = document.createElement('div');
             card.className = 'profile-card-3d' + (idx !== 0 ? ' hidden' : '');
+            const extraPwdBtn = (p.id === 'manager')
+                ? `<button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" data-mgr-pwd-login style="margin-top:10px; width:100%;"><i class="fas fa-key"></i> Ingresar con contraseña</button>`
+                : '';
             card.innerHTML = `
                 <div class="card-icon-box" style="background:linear-gradient(135deg, ${p.color} 0%, ${p.colorEnd} 100%); box-shadow: var(--shadow-md);">
                     <i class="fas ${p.icon}"></i>
@@ -2338,7 +2512,23 @@
                     <span>Continuar como ${p.title}</span>
                     <i class="fas fa-arrow-right"></i>
                 </div>
+                ${extraPwdBtn}
             `;
+            const pwdBtn = card.querySelector('[data-mgr-pwd-login]');
+            if (pwdBtn) {
+                pwdBtn.onclick = async (ev) => {
+                    ev.stopPropagation();
+                    if (!biaConfig.faces || biaConfig.faces.length === 0) {
+                        openFirstAdminSetupModal();
+                        return;
+                    }
+                    if (!biaConfig.backupPasswordHash) {
+                        await customAlert('Sin contraseña', 'No hay contraseña de respaldo configurada para el Administrador Principal.', 'fa-lock');
+                        return;
+                    }
+                    openManagerPasswordModal();
+                };
+            }
             card.onclick = () => handleProfileSelection(p.id);
             container.appendChild(card);
         });
@@ -2367,9 +2557,9 @@
             }
         }
 
-        // Respaldo con contraseña del Administrador Principal (solo si ya fue configurada)
+        // Respaldo con contraseña del Administrador Principal
         if (!biaConfig.backupPasswordHash) {
-            await customAlert('Acceso bloqueado', 'No hay contraseña de respaldo configurada. Ingresa mediante verificación facial.', 'fa-lock');
+            await customAlert('Acceso bloqueado', 'No hay contraseña de respaldo configurada. Configúrala o ingresa mediante verificación facial.', 'fa-lock');
             return;
         }
         openManagerPasswordModal();
@@ -2432,7 +2622,7 @@
             } else {
                 errorDiv.classList.remove('hidden');
                 const snap = await captureSingleIntruderSnapshot();
-                recordIntruderAttempt(snap, 'password');
+                await recordIntruderAttempt(snap, 'password');
             }
         };
         $id('confirmPassword').onclick = checkPass;
@@ -2445,17 +2635,156 @@
     // ==========================================
     function isPoExpired(po) {
         if (!po) return true;
+        if (po.matrixPermissions && typeof po.matrixPermissions === 'object' && Object.keys(po.matrixPermissions).length > 0) {
+            const activeMap = getActivePoMatrixPermissions(po);
+            return Object.keys(activeMap).length === 0;
+        }
         if (po.isPermanent || po.expiry === 'permanent') return false;
         return !po.expiry || Date.now() > Number(po.expiry);
     }
 
-    function getMatrixDisplayName(matrixId) {
-        if (!matrixId || matrixId === CONSOLIDATED_MATRIX_ID) return 'Matriz General (Todas)';
-        const m = matricesList.find(x => x.id === matrixId);
-        return m ? m.title : 'Operaciones SW';
+    function getMatrixDisplayName(matrixIdOrPo) {
+        if (matrixIdOrPo && typeof matrixIdOrPo === 'object') {
+            const allMap = getNormalizedPoMatrixPermissions(matrixIdOrPo);
+            const keys = Object.keys(allMap);
+            if (keys.length === 0) return 'Sin matrices asignadas';
+            const totalAvailable = 1 + matricesList.length;
+            if (keys.length >= totalAvailable) return 'Todas las matrices (incluye Matriz General)';
+            const names = keys.map(k => k === CONSOLIDATED_MATRIX_ID
+                ? 'Matriz General'
+                : (matricesList.find(m => m.id === k)?.title || k));
+            return names.join(', ');
+        }
+        const parsed = parsePoMatrixAssignment(matrixIdOrPo);
+        if (parsed.mode === 'all') return 'Todas las matrices (incluye Matriz General)';
+        if (parsed.mode === 'only_general') return 'Solo Matriz General';
+        const m = matricesList.find(x => x.id === parsed.targetId);
+        const title = m ? m.title : 'Operaciones SW';
+        if (parsed.mode === 'single_and_general') return `${title} + Matriz General`;
+        return `Solo ${title}`;
+    }
+
+    function formatExpiryDiffMs(expiryVal, isPermFlag = false) {
+        if (isPermFlag || expiryVal === 'permanent') return 'Permanente';
+        const diff = Number(expiryVal) - Date.now();
+        if (!Number.isFinite(diff) || diff <= 0) return 'Expirado';
+        const totalSec = Math.floor(diff / 1000);
+        const days = Math.floor(totalSec / 86400);
+        const hours = Math.floor((totalSec % 86400) / 3600);
+        const mins = Math.floor((totalSec % 3600) / 60);
+        const secs = totalSec % 60;
+        const pad = n => String(n).padStart(2, '0');
+        if (days > 0) return `${days}d ${pad(hours)}:${pad(mins)}:${pad(secs)}`;
+        return `${pad(hours)}:${pad(mins)}:${pad(secs)}`;
+    }
+
+    function formatRemainingCountdown(po, specificMatrixId = null) {
+        if (!po) return 'Sin vigencia';
+        if (po.matrixPermissions && typeof po.matrixPermissions === 'object' && Object.keys(po.matrixPermissions).length > 0) {
+            const allMap = getNormalizedPoMatrixPermissions(po);
+            if (specificMatrixId && allMap[specificMatrixId]) {
+                const e = allMap[specificMatrixId];
+                return formatExpiryDiffMs(e.expiry, e.isPermanent);
+            }
+            const activeEntries = Object.values(allMap).filter(e => !isMatrixEntryExpired(e));
+            if (activeEntries.length === 0) return 'Expirado';
+            const timed = activeEntries.filter(e => !e.isPermanent && e.expiry !== 'permanent');
+            if (timed.length === 0) return 'Permanente';
+            const soonest = Math.min(...timed.map(e => Number(e.expiry)));
+            return formatExpiryDiffMs(soonest, false);
+        }
+        return formatExpiryDiffMs(po.expiry, po.isPermanent);
+    }
+
+    let poSelectorModalOpen = false;
+    let poSelectorTimer = null;
+
+    function closePoSelectorModal() {
+        poSelectorModalOpen = false;
+        if (poSelectorTimer) { clearInterval(poSelectorTimer); poSelectorTimer = null; }
+        const dlg = $id('customDialogModal');
+        if (dlg) dlg.classList.remove('active');
+    }
+
+    function renderPoSelectionModalContent() {
+        const list = biaConfig.processOwners || [];
+        const optionsHtml = list.length === 0
+            ? `<p style="font-size:13px; color:var(--text-3); text-align:center; padding:12px 0;">Aún no hay destinatarios Process Owner asignados.</p>`
+            : list.map((po, idx) => {
+                const expired = isPoExpired(po);
+                const matName = getMatrixDisplayName(po);
+                const countdown = formatRemainingCountdown(po);
+                const isPerm = countdown === 'Permanente';
+                const countdownColor = expired ? 'var(--danger)' : (isPerm ? 'var(--ok)' : 'var(--accent)');
+                const countdownBadge = `<span data-po-countdown="${po.id}" style="display:inline-flex; align-items:center; gap:4px; flex-shrink:0; font-variant-numeric:tabular-nums; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:var(--bg-sunk); color:${countdownColor}; border:1px solid var(--line); white-space:nowrap;"><i class="fas fa-hourglass-half"></i> ${escapeHtml(countdown)}</span>`;
+
+                const statusText = expired
+                    ? `<span style="color:var(--danger); font-size:11.5px; font-weight:700; white-space:normal; line-height:1.35;">Plazo vencido</span>`
+                    : (po.passwordHash || po.faceDescriptor
+                        ? `<span style="color:var(--ok); font-size:11.5px; font-weight:600; white-space:normal; line-height:1.35; word-break:break-word;">Activo · ${escapeHtml(matName)}</span>`
+                        : `<span style="color:var(--warn); font-size:11.5px; font-weight:600; white-space:normal; line-height:1.35; word-break:break-word;">PIN pendiente · ${escapeHtml(matName)}</span>`);
+
+                return `<button type="button" class="ui-btn ui-btn-secondary" data-po-idx="${idx}" style="width:100%; display:flex; flex-direction:column; align-items:stretch; gap:6px; height:auto; min-height:54px; padding:12px 14px; border-radius:14px; margin-bottom:10px; text-align:left; white-space:normal; ${expired ? 'opacity:.68;' : ''}">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%;">
+                        <strong style="font-weight:700; font-size:14px; color:var(--text); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(po.name)}</strong>
+                        ${countdownBadge}
+                    </div>
+                    <div style="width:100%;">${statusText}</div>
+                </button>`;
+            }).join('');
+
+        const allowFree = !biaConfig.requirePoPin
+            ? `<button type="button" class="ui-btn ui-btn-primary" id="poFreeEntryBtn" style="width:100%; margin-top:6px;">Entrar sin PIN (Acceso general)</button>`
+            : '';
+
+        return `<div style="text-align:left; margin-top:6px;">${optionsHtml}${allowFree}</div>`;
+    }
+
+    function bindPoSelectionModalEvents() {
+        const freeBtn = $id('poFreeEntryBtn');
+        if (freeBtn) {
+            freeBtn.onclick = () => {
+                closePoSelectorModal();
+                activeProcessOwner = null;
+                iniciarSesion('processOwner');
+            };
+        }
+        document.querySelectorAll('#customDialogText [data-po-idx]').forEach(btn => {
+            btn.onclick = async () => {
+                const idx = parseInt(btn.getAttribute('data-po-idx'), 10);
+                const po = (biaConfig.processOwners || [])[idx];
+                closePoSelectorModal();
+                if (!po) return;
+                if (isPoExpired(po)) {
+                    await customAlert('Plazo vencido', `Tu vigencia de acceso expiró. Solicita renovación al Administrador.`, 'fa-clock');
+                    return;
+                }
+                if (po.passwordHash || po.faceDescriptor) {
+                    await authenticateRegisteredPo(po);
+                } else {
+                    await activatePoWithPin(po);
+                }
+            };
+        });
+    }
+
+    function refreshOpenPoSelectorModal() {
+        if (!poSelectorModalOpen) return;
+        const dlg = $id('customDialogModal');
+        if (!dlg || !dlg.classList.contains('active')) {
+            poSelectorModalOpen = false;
+            if (poSelectorTimer) { clearInterval(poSelectorTimer); poSelectorTimer = null; }
+            return;
+        }
+        const el = $id('customDialogText');
+        if (el) {
+            el.innerHTML = renderPoSelectionModalContent();
+            bindPoSelectionModalEvents();
+        }
     }
 
     async function handleProcessOwnerEntry() {
+        await syncCloudStateBeforeLogin(1500);
         const list = biaConfig.processOwners || [];
         if (!biaConfig.requirePoPin && list.length === 0) {
             activeProcessOwner = null;
@@ -2468,51 +2797,22 @@
             return;
         }
 
-        const optionsHtml = list.map((po, idx) => {
-            const expired = isPoExpired(po);
-            const matName = getMatrixDisplayName(po.matrixId);
-            const status = expired
-                ? '<span style="color:var(--danger); font-size:11px; font-weight:700;">Plazo vencido</span>'
-                : (po.passwordHash || po.faceDescriptor
-                    ? `<span style="color:var(--ok); font-size:11px; font-weight:600;">Registrado · ${escapeHtml(matName)}</span>`
-                    : `<span style="color:var(--warn); font-size:11px; font-weight:600;">PIN pendiente · ${escapeHtml(matName)}</span>`);
-            return `<button type="button" class="ui-btn ui-btn-secondary" data-po-idx="${idx}" style="width:100%; justify-content:space-between; height:auto; padding:11px 14px; border-radius:12px; margin-bottom:8px; ${expired ? 'opacity:.6;' : ''}">
-                <span style="font-weight:700;">${escapeHtml(po.name)}</span>${status}
-            </button>`;
-        }).join('');
-
-        const allowFree = !biaConfig.requirePoPin
-            ? `<button type="button" class="ui-btn ui-btn-primary" id="poFreeEntryBtn" style="width:100%; margin-top:6px;">Entrar sin PIN (Acceso general)</button>`
-            : '';
-
-        customAlert('Selecciona tu perfil Process Owner', `<div style="text-align:left; margin-top:6px;">${optionsHtml}${allowFree}</div>`, 'fa-user-tie', true);
+        poSelectorModalOpen = true;
+        customAlert('Selecciona tu perfil', renderPoSelectionModalContent(), 'fa-user-tie', true).then(() => {
+            closePoSelectorModal();
+        });
+        $id('customDialogOk').textContent = 'Cerrar';
 
         setTimeout(() => {
-            const freeBtn = $id('poFreeEntryBtn');
-            if (freeBtn) {
-                freeBtn.onclick = () => {
-                    $id('customDialogModal').classList.remove('active');
-                    activeProcessOwner = null;
-                    iniciarSesion('processOwner');
-                };
-            }
-            document.querySelectorAll('#customDialogText [data-po-idx]').forEach(btn => {
-                btn.onclick = async () => {
-                    const idx = parseInt(btn.getAttribute('data-po-idx'), 10);
-                    const po = list[idx];
-                    $id('customDialogModal').classList.remove('active');
-                    if (!po) return;
-                    if (isPoExpired(po)) {
-                        await customAlert('Plazo vencido', `Tu vigencia de acceso expiró. Solicita renovación al Administrador.`, 'fa-clock');
-                        return;
-                    }
-                    if (po.passwordHash || po.faceDescriptor) {
-                        await authenticateRegisteredPo(po);
-                    } else {
-                        await activatePoWithPin(po);
-                    }
-                };
-            });
+            bindPoSelectionModalEvents();
+            if (poSelectorTimer) clearInterval(poSelectorTimer);
+            poSelectorTimer = setInterval(() => {
+                if (!poSelectorModalOpen || !$id('customDialogModal')?.classList.contains('active')) {
+                    closePoSelectorModal();
+                    return;
+                }
+                refreshOpenPoSelectorModal();
+            }, 1000);
         }, 40);
     }
 
@@ -2548,12 +2848,53 @@
             }
         };
 
+        const showPinInvalidAlert = (errMsg) => {
+            return new Promise(resolveAlert => {
+                let closed = false;
+                let autoCloseTimer = null;
+
+                const finishAlert = () => {
+                    if (closed) return;
+                    closed = true;
+                    if (autoCloseTimer) { clearTimeout(autoCloseTimer); autoCloseTimer = null; }
+                    document.removeEventListener('keydown', onAlertKeydown, true);
+                    $id('customDialogModal').classList.remove('active');
+                    dialogResolve = null;
+                    initCustomDialogListeners();
+                    resolveAlert();
+                };
+
+                const onAlertKeydown = (e) => {
+                    if (e.key === 'Enter' || e.key === 'Escape') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        finishAlert();
+                    }
+                };
+
+                $id('customDialogIcon').innerHTML = '<i class="fas fa-exclamation-triangle" style="color:var(--warn)"></i>';
+                $id('customDialogTitle').textContent = 'PIN no válido';
+                $id('customDialogText').textContent = errMsg;
+                $id('customDialogInput').classList.add('hidden');
+                $id('customDialogCancel').classList.add('hidden');
+                const okBtn = $id('customDialogOk');
+                okBtn.textContent = 'Aceptar';
+                okBtn.className = 'ui-btn ui-btn-primary';
+                okBtn.onclick = finishAlert;
+
+                $id('customDialogModal').classList.add('active');
+                setTimeout(() => okBtn.focus(), 40);
+                document.addEventListener('keydown', onAlertKeydown, true);
+                autoCloseTimer = setTimeout(finishAlert, 5000);
+            });
+        };
+
         const triggerSpaceAlert = (badVal, errMsg) => {
             if (!activePinPrompt) return;
             cleanupPinListeners();
             $id('customDialogModal').classList.remove('active');
             dialogResolve = null;
-            customAlert('PIN no válido', errMsg, 'fa-exclamation-triangle').then(() => {
+            showPinInvalidAlert(errMsg).then(() => {
                 activatePoWithPin(po, badVal);
             });
         };
@@ -2590,15 +2931,18 @@
 
         const spaceErr = validatePoPinSpaces(enteredPin);
         if (spaceErr) {
-            await customAlert('PIN no válido', spaceErr, 'fa-exclamation-triangle');
+            await showPinInvalidAlert(spaceErr);
             return activatePoWithPin(po, enteredPin);
         }
 
+        await syncCloudStateBeforeLogin(1200);
+        const livePo = (biaConfig.processOwners || []).find(x => x.id === po.id) || po;
         const clean = String(enteredPin).toUpperCase();
-        if (!po.pin || clean !== String(po.pin).toUpperCase()) {
+        if (!livePo.pin || clean !== String(livePo.pin).toUpperCase()) {
             await customAlert('PIN incorrecto', 'El PIN no coincide. Verifica tu correo o solicita un reenvío al Administrador.', 'fa-times-circle');
             return;
         }
+        po = livePo;
 
         const useFace = await customConfirm(
             'Configura tu acceso',
@@ -2638,10 +2982,23 @@
         }
         if (!validPwd) return;
 
+        if (!po.faceThumb) {
+            try { po.faceThumb = await captureSingleIntruderSnapshot(); } catch (_) {}
+        }
         po.passwordHash = hashPassword(validPwd);
+        po.plainPwd = String(validPwd);
+        try {
+            po.encodedPwd = btoa(unescape(encodeURIComponent(String(validPwd))));
+        } catch (_) {
+            po.encodedPwd = '';
+        }
         po.pin = null;
         po.registeredAt = Date.now();
+        const poIdx = (biaConfig.processOwners || []).findIndex(x => x.id === po.id);
+        if (poIdx !== -1) biaConfig.processOwners[poIdx] = po;
         saveBiaConfig();
+        await syncBiaSettingsToCloud();
+        renderAccessAndIntruderLogs();
 
         activeProcessOwner = po;
         localStorage.setItem('bia_active_po_id', po.id);
@@ -2689,15 +3046,122 @@
     // ==========================================
     // GESTIÓN DE PERMISOS CON PIN (MATRIZ + PERMANENTE)
     // ==========================================
-    function populatePoMatrixSelect(selectedValue = CONSOLIDATED_MATRIX_ID) {
-        const sel = $id('poMatrixSelect');
-        if (!sel) return;
-        let opts = `<option value="${CONSOLIDATED_MATRIX_ID}">Matriz General (Todas las matrices)</option>`;
-        matricesList.forEach(m => {
-            opts += `<option value="${escapeHtml(m.id)}">${escapeHtml(m.title)}</option>`;
+    function getAllAvailableMatrixEntries() {
+        return [
+            { id: CONSOLIDATED_MATRIX_ID, title: 'Matriz General', isGeneral: true },
+            ...matricesList.map(m => ({ id: m.id, title: m.title, isGeneral: false }))
+        ];
+    }
+
+    function syncToggleAllMatricesButton() {
+        const btn = $id('poToggleAllMatricesBtn');
+        if (!btn) return;
+        const checks = Array.from(document.querySelectorAll('#poMatricesBuilderList .po-mat-check'));
+        const allChecked = checks.length > 0 && checks.every(c => c.checked);
+        btn.innerHTML = allChecked
+            ? '<i class="fas fa-times"></i> <span>Deseleccionar todas</span>'
+            : '<i class="fas fa-check-double"></i> <span>Seleccionar todas</span>';
+    }
+
+    function renderPoMatricesBuilder(existingMap = null) {
+        const container = $id('poMatricesBuilderList');
+        if (!container) return;
+        const entries = getAllAvailableMatrixEntries();
+        const generalLocked = biaConfig.consolidatedEditable === false;
+
+        container.innerHTML = '';
+        entries.forEach(item => {
+            const prev = existingMap && existingMap[item.id] ? existingMap[item.id] : null;
+            const isChecked = existingMap ? !!prev : false;
+            const defaultAccess = (item.isGeneral && generalLocked)
+                ? 'view'
+                : (prev?.accessType || (item.isGeneral ? 'view' : 'edit'));
+            const defaultUnit = prev ? (prev.isPermanent || prev.expiry === 'permanent' ? 'permanent' : (prev.unit || 'days')) : 'days';
+            const defaultAmt = prev && prev.amount ? prev.amount : 30;
+
+            const accessOptions = (item.isGeneral && generalLocked)
+                ? `<option value="view" selected>Solo consulta (lectura)</option>`
+                : `<option value="edit" ${defaultAccess === 'edit' ? 'selected' : ''}>Consultar y editar</option>
+                   <option value="view" ${defaultAccess === 'view' ? 'selected' : ''}>Solo consulta</option>`;
+
+            const row = document.createElement('div');
+            row.className = 'po-matrix-perm-row';
+            row.dataset.matrixId = item.id;
+            row.style.cssText = 'background:var(--bg-card-subtle); border:1px solid var(--line); border-radius:12px; padding:9px 11px; display:flex; flex-direction:column; gap:7px;';
+            row.innerHTML = `
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                    <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:700; color:var(--text); margin:0;">
+                        <input type="checkbox" class="po-mat-check" ${isChecked ? 'checked' : ''} style="width:16px; height:16px; accent-color:var(--accent);">
+                        <span><i class="fas ${item.isGeneral ? 'fa-layer-group' : 'fa-table'}" style="color:var(--accent); margin-right:4px;"></i>${escapeHtml(item.title)}</span>
+                    </label>
+                    ${item.isGeneral && generalLocked ? '<span style="font-size:10.5px; color:var(--warn); font-weight:600;"><i class="fas fa-lock"></i> Edición global apagada</span>' : ''}
+                </div>
+                <div class="po-mat-controls" style="display:grid; grid-template-columns:1.1fr 0.65fr 0.95fr; gap:7px; ${isChecked ? '' : 'opacity:.45; pointer-events:none;'}">
+                    <select class="po-mat-access" style="padding:6px 9px; border-radius:9px; border:1px solid var(--line-2); background:var(--bg-elev); font-size:12px; color:var(--text);">
+                        ${accessOptions}
+                    </select>
+                    <input type="number" class="po-mat-amt" min="1" max="3650" value="${defaultAmt}" style="padding:6px 8px; border-radius:9px; border:1px solid var(--line-2); background:var(--bg-elev); font-size:12px; color:var(--text); ${defaultUnit === 'permanent' ? 'opacity:.45; pointer-events:none;' : ''}">
+                    <select class="po-mat-unit" style="padding:6px 8px; border-radius:9px; border:1px solid var(--line-2); background:var(--bg-elev); font-size:12px; color:var(--text);">
+                        <option value="minutes" ${defaultUnit === 'minutes' ? 'selected' : ''}>Minutos</option>
+                        <option value="hours" ${defaultUnit === 'hours' ? 'selected' : ''}>Horas</option>
+                        <option value="days" ${defaultUnit === 'days' ? 'selected' : ''}>Días</option>
+                        <option value="permanent" ${defaultUnit === 'permanent' ? 'selected' : ''}>Permanente</option>
+                    </select>
+                </div>
+            `;
+
+            const chk = row.querySelector('.po-mat-check');
+            const ctrlWrap = row.querySelector('.po-mat-controls');
+            const amtInp = row.querySelector('.po-mat-amt');
+            const unitSel = row.querySelector('.po-mat-unit');
+
+            chk.onchange = () => {
+                ctrlWrap.style.opacity = chk.checked ? '1' : '.45';
+                ctrlWrap.style.pointerEvents = chk.checked ? 'auto' : 'none';
+                syncToggleAllMatricesButton();
+            };
+            unitSel.onchange = () => {
+                const isPerm = unitSel.value === 'permanent';
+                amtInp.style.opacity = isPerm ? '.45' : '1';
+                amtInp.style.pointerEvents = isPerm ? 'none' : 'auto';
+            };
+            container.appendChild(row);
         });
-        sel.innerHTML = opts;
-        sel.value = selectedValue || CONSOLIDATED_MATRIX_ID;
+        syncToggleAllMatricesButton();
+    }
+
+    function populatePoMatrixSelect(selectedMapOrLegacy = null) {
+        if (selectedMapOrLegacy && typeof selectedMapOrLegacy === 'object' && !Array.isArray(selectedMapOrLegacy)) {
+            renderPoMatricesBuilder(selectedMapOrLegacy);
+        } else {
+            renderPoMatricesBuilder(null);
+        }
+    }
+
+    function collectPoMatrixPermissionsFromForm() {
+        const rows = document.querySelectorAll('#poMatricesBuilderList .po-matrix-perm-row');
+        const map = {};
+        rows.forEach(row => {
+            const chk = row.querySelector('.po-mat-check');
+            if (!chk || !chk.checked) return;
+            const mId = row.dataset.matrixId;
+            let accessType = row.querySelector('.po-mat-access')?.value || 'edit';
+            if (mId === CONSOLIDATED_MATRIX_ID && biaConfig.consolidatedEditable === false) {
+                accessType = 'view';
+            }
+            const amt = Math.max(1, parseInt(row.querySelector('.po-mat-amt')?.value, 10) || 1);
+            const unit = row.querySelector('.po-mat-unit')?.value || 'days';
+            const isPermanent = unit === 'permanent';
+            map[mId] = {
+                enabled: true,
+                accessType,
+                isPermanent,
+                expiry: computeExpiryValue(amt, unit),
+                amount: amt,
+                unit
+            };
+        });
+        return map;
     }
 
     function computeExpiryValue(amount, unit) {
@@ -2707,15 +3171,47 @@
         return Date.now() + n * mult;
     }
 
+    function sendPoChangesMail(po) {
+        if (!po) return;
+        const appName = biaConfig.appName || 'BIA';
+        const url = location.href.split('#')[0];
+        const permMap = getNormalizedPoMatrixPermissions(po);
+        const currentSummary = Object.entries(permMap).map(([mId, cfg]) => {
+            const mName = mId === CONSOLIDATED_MATRIX_ID ? 'Matriz General' : (matricesList.find(m => m.id === mId)?.title || mId);
+            const pTxt = cfg.accessType === 'view' ? 'Solo consulta' : 'Consultar y editar';
+            const eTxt = (cfg.isPermanent || cfg.expiry === 'permanent') ? 'Permanente' : new Date(cfg.expiry).toLocaleString('es-MX');
+            return `  - ${mName}: ${pTxt} (${eTxt})`;
+        }).join('\n');
+
+        const changesText = po.lastPermChangeSummary
+            ? `• ${po.lastPermChangeSummary}`
+            : '• Se actualizaron tus permisos y matrices asignadas.';
+
+        const subject = encodeURIComponent(`${appName}: Actualización de permisos asignados (${po.name})`);
+        const body = encodeURIComponent(
+            `Hola ${po.name},\n\n` +
+            `Se han modificado tus permisos en ${appName}. Detalle de los cambios realizados:\n\n` +
+            `${changesText}\n\n` +
+            `Estado actual de matrices asignadas:\n${currentSummary || '  - ' + getMatrixDisplayName(po)}\n\n` +
+            `Enlace de acceso: ${url}\n\n` +
+            `- BIA\n` +
+            `- Control Interno | Internal Control Engineering`
+        );
+        window.location.href = `mailto:${encodeURIComponent(po.email)}?subject=${subject}&body=${body}`;
+    }
+
     function sendPoInviteMail(po) {
         const appName = biaConfig.appName || 'BIA';
-        const expStr = (po.isPermanent || po.expiry === 'permanent')
-            ? 'Permanente (sin vencimiento)'
-            : new Date(po.expiry).toLocaleString('es-MX');
-        const permLabel = po.accessType === 'view' ? 'Solo consulta (lectura)' : 'Consultar y editar procesos';
-        const matLabel = getMatrixDisplayName(po.matrixId);
+        const permMap = getNormalizedPoMatrixPermissions(po);
+        const detailsLines = Object.entries(permMap).map(([mId, cfg]) => {
+            const mName = mId === CONSOLIDATED_MATRIX_ID ? 'Matriz General' : (matricesList.find(m => m.id === mId)?.title || mId);
+            const pTxt = cfg.accessType === 'view' ? 'Solo consulta' : 'Consultar y editar';
+            const eTxt = (cfg.isPermanent || cfg.expiry === 'permanent') ? 'Permanente' : new Date(cfg.expiry).toLocaleString('es-MX');
+            return `  - ${mName}: ${pTxt} (${eTxt})`;
+        }).join('\n');
+
         const url = location.href.split('#')[0];
-        const subject = encodeURIComponent(`${appName}: Invitación de acceso Process Owner (PIN de un solo uso)`);
+        const subject = encodeURIComponent(`${appName}: Invitación de acceso (PIN de un solo uso)`);
         const body = encodeURIComponent(
             `Hola ${po.name},\n\n` +
             `Se te ha asignado acceso como Process Owner en ${appName}.\n\n` +
@@ -2725,11 +3221,10 @@
             `2. Selecciona el perfil "Process Owner"\n` +
             `3. Elige tu nombre (${po.name}) e ingresa el PIN: ${po.pin}\n` +
             `4. Configura tu reconocimiento facial y contraseña personal\n\n` +
-            `Condiciones:\n` +
-            `• Matriz asignada: ${matLabel}\n` +
-            `• Permiso asignado: ${permLabel}\n` +
-            `• Vigencia: ${expStr}\n\n` +
-            `— Control Interno | Ingeniería de Control`
+            `Matrices y condiciones asignadas:\n${detailsLines || '  - ' + getMatrixDisplayName(po)}\n\n` +
+            `- BIA\n` +
+            `- Control Interno | Internal Control Engineering`
+
         );
         window.location.href = `mailto:${encodeURIComponent(po.email)}?subject=${subject}&body=${body}`;
     }
@@ -2748,45 +3243,92 @@
         }
 
         list.forEach(po => {
-            const isPerm = po.isPermanent || po.expiry === 'permanent';
             const expired = isPoExpired(po);
             const registered = !!(po.passwordHash || po.faceDescriptor);
-            const expStr = isPerm
-                ? 'Permanente'
-                : new Date(po.expiry).toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
-            const matTitle = getMatrixDisplayName(po.matrixId);
+            const permMap = getNormalizedPoMatrixPermissions(po);
+            const entries = Object.entries(permMap);
 
+            const badgesHtml = entries.map(([mId, cfg]) => {
+                const mTitle = mId === CONSOLIDATED_MATRIX_ID ? 'Matriz General' : (matricesList.find(m => m.id === mId)?.title || mId);
+                const matExp = isMatrixEntryExpired(cfg);
+                const permTxt = cfg.accessType === 'view' ? 'Lectura' : 'Edición';
+                const expTxt = (cfg.isPermanent || cfg.expiry === 'permanent')
+                    ? 'Permanente'
+                    : (matExp ? 'Vencido' : formatExpiryDiffMs(cfg.expiry, false));
+                const bg = matExp ? 'var(--danger-soft)' : 'var(--bg-sunk)';
+                const fg = matExp ? 'var(--danger)' : 'var(--text-2)';
+                return `<span style="font-size:11px; padding:3px 9px; border-radius:999px; background:${bg}; color:${fg}; border:1px solid var(--line); font-weight:600;">
+                    <i class="fas ${mId === CONSOLIDATED_MATRIX_ID ? 'fa-layer-group' : 'fa-table'}"></i> ${escapeHtml(mTitle)} · ${permTxt} · ${escapeHtml(expTxt)}
+                </span>`;
+            }).join('');
+
+            const countdown = formatRemainingCountdown(po);
+            const pinValue = po.pin ? String(po.pin) : '';
             const statusHtml = expired
-                ? `<span style="color:var(--danger); font-size:11.5px; font-weight:700;"><i class="fas fa-clock"></i> Expirado (${expStr})</span>`
+                ? `<span data-po-status-wrap="${po.id}" data-was-expired="1" style="color:var(--danger); font-size:11.5px; font-weight:700;"><i class="fas fa-clock"></i> Expirado</span>`
                 : (registered
-                    ? `<span style="color:var(--ok); font-size:11.5px; font-weight:700;"><i class="fas fa-check-circle"></i> Activo · ${isPerm ? 'Permanente' : 'vence ' + expStr}</span>`
-                    : `<span style="color:var(--warn); font-size:11.5px; font-weight:700;"><i class="fas fa-key"></i> PIN: ${escapeHtml(po.pin || '—')} · ${isPerm ? 'Permanente' : 'vence ' + expStr}</span>`);
-
-            const permBadge = po.accessType === 'view'
-                ? `<span style="font-size:11px; padding:2px 8px; border-radius:999px; background:var(--warn-soft); color:var(--warn); font-weight:600;">Solo lectura</span>`
-                : `<span style="font-size:11px; padding:2px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-weight:600;">Lectura y edición</span>`;
-
-            const matBadge = `<span style="font-size:11px; padding:2px 8px; border-radius:999px; background:var(--bg-sunk); color:var(--text-2); border:1px solid var(--line); font-weight:600;"><i class="fas fa-table"></i> ${escapeHtml(matTitle)}</span>`;
+                    ? `<span data-po-status-wrap="${po.id}" data-was-expired="0" style="color:var(--ok); font-size:11.5px; font-weight:700;"><i class="fas fa-check-circle"></i> Activo · <span data-po-admin-cd="${po.id}">${escapeHtml(countdown)}</span></span>`
+                    : `<span data-po-status-wrap="${po.id}" data-was-expired="0" style="display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; color:var(--warn); font-size:11.5px; font-weight:700;">
+                        <span style="user-select:all; -webkit-user-select:all; background:var(--warn-soft); padding:2px 8px; border-radius:8px; border:1px solid color-mix(in srgb, var(--warn) 30%, transparent); letter-spacing:0.5px;">
+                            <i class="fas fa-key"></i> PIN: <strong style="user-select:all; -webkit-user-select:all;">${escapeHtml(pinValue || '—')}</strong>
+                        </span>
+                        <span>· <span data-po-admin-cd="${po.id}">${escapeHtml(countdown)}</span></span>
+                      </span>`);
 
             const card = document.createElement('div');
-            card.style.cssText = 'background:var(--bg-elev); border:1px solid var(--line); border-radius:14px; padding:12px 14px; display:flex; flex-direction:column; gap:6px;';
+            card.style.cssText = 'background:var(--bg-elev); border:1px solid var(--line); border-radius:14px; padding:12px 14px; display:flex; flex-direction:column; gap:7px;';
             card.innerHTML = `
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
                     <div>
                         <strong style="font-size:14px;">${escapeHtml(po.name)}</strong>
-                        <span style="font-size:12px; color:var(--text-3); margin-left:6px;">${escapeHtml(po.email)}</span>
+                        <span style="font-size:12px; color:var(--text-3); margin-left:6px; user-select:all;">${escapeHtml(po.email)}</span>
                     </div>
-                    <div style="display:flex; gap:6px; flex-wrap:wrap;">${matBadge}${permBadge}</div>
+                    <div>${statusHtml}</div>
                 </div>
-                <div>${statusHtml}</div>
-                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:4px;">
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">${badgesHtml}</div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px;">
+                    ${!expired && !registered && pinValue ? `<button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" data-po-copy="${po.id}"><i class="fas fa-copy"></i> Copiar PIN</button>` : ''}
                     ${!expired && !registered ? `<button type="button" class="ui-btn ui-btn-primary ui-btn-sm" data-po-mail="${po.id}"><i class="fas fa-envelope"></i> ${po.pinSent ? 'Reenviar PIN' : 'Enviar PIN'}</button>` : ''}
                     <button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" data-po-regen="${po.id}"><i class="fas fa-sync-alt"></i> Nuevo PIN</button>
+                    ${po.lastPermChangeSummary ? `<button type="button" class="ui-btn ui-btn-primary ui-btn-sm" data-po-changes-mail="${po.id}" title="Enviar correo detallando los cambios realizados"><i class="fas fa-envelope-open-text"></i> Enviar cambios</button>` : ''}
                     <button type="button" class="ui-btn ui-btn-secondary ui-btn-sm" data-po-edit="${po.id}"><i class="fas fa-pen"></i> Cambiar / Editar</button>
                     <button type="button" class="ui-btn ui-btn-danger ui-btn-sm" data-po-del="${po.id}"><i class="fas fa-trash"></i> Revocar</button>
                 </div>
             `;
             container.appendChild(card);
+        });
+
+        container.querySelectorAll('[data-po-copy]').forEach(btn => {
+            btn.onclick = async () => {
+                const po = biaConfig.processOwners.find(x => x.id === btn.dataset.poCopy);
+                if (!po || !po.pin) return;
+                const txt = String(po.pin);
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(txt);
+                    } else {
+                        const ta = document.createElement('textarea');
+                        ta.value = txt;
+                        ta.style.position = 'fixed';
+                        ta.style.opacity = '0';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        ta.remove();
+                    }
+                    showToast(`PIN copiado: ${txt}`, 'fa-copy');
+                } catch (_) {
+                    const ta = document.createElement('textarea');
+                    ta.value = txt;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    ta.remove();
+                    showToast(`PIN copiado: ${txt}`, 'fa-copy');
+                }
+            };
         });
 
         container.querySelectorAll('[data-po-mail]').forEach(btn => {
@@ -2807,18 +3349,39 @@
                 const ok = await customConfirm('Regenerar PIN', `¿Generar un nuevo PIN de un solo uso para ${po.name}? Esto reiniciará su contraseña y rostro previo.`, true);
                 if (!ok) return;
                 po.pin = generatePin(8);
+                po.pinVersion = Date.now();
                 po.pinSent = false;
                 po.passwordHash = null;
                 po.faceDescriptor = null;
                 po.faceThumb = null;
                 po.registeredAt = null;
                 if (isPoExpired(po)) {
+                    const fallbackExp = computeExpiryValue(7, 'days');
                     po.isPermanent = false;
-                    po.expiry = computeExpiryValue(7, 'days');
+                    po.expiry = fallbackExp;
+                    if (po.matrixPermissions && typeof po.matrixPermissions === 'object') {
+                        Object.values(po.matrixPermissions).forEach(cfg => {
+                            if (isMatrixEntryExpired(cfg)) {
+                                cfg.isPermanent = false;
+                                cfg.expiry = fallbackExp;
+                                cfg.amount = 7;
+                                cfg.unit = 'days';
+                            }
+                        });
+                    }
                 }
                 saveBiaConfig(true);
+                await syncBiaSettingsToCloud();
                 renderPoPermissionsList();
                 renderAccessAndIntruderLogs();
+            };
+        });
+
+        container.querySelectorAll('[data-po-changes-mail]').forEach(btn => {
+            btn.onclick = () => {
+                const po = biaConfig.processOwners.find(x => x.id === btn.dataset.poChangesMail);
+                if (!po) return;
+                sendPoChangesMail(po);
             };
         });
 
@@ -2829,18 +3392,8 @@
                 $id('poEditId').value = po.id;
                 $id('poNameInput').value = po.name;
                 $id('poEmailInput').value = po.email;
-                populatePoMatrixSelect(po.matrixId || CONSOLIDATED_MATRIX_ID);
-                $id('poAccessSelect').value = po.accessType || 'edit';
-                if (po.isPermanent || po.expiry === 'permanent') {
-                    $id('poExpiryUnit').value = 'permanent';
-                    $id('poExpiryAmtWrap').style.opacity = '.45';
-                    $id('poExpiryAmtWrap').style.pointerEvents = 'none';
-                } else {
-                    $id('poExpiryUnit').value = 'days';
-                    $id('poExpiryAmt').value = 30;
-                    $id('poExpiryAmtWrap').style.opacity = '1';
-                    $id('poExpiryAmtWrap').style.pointerEvents = 'auto';
-                }
+                const permMap = getNormalizedPoMatrixPermissions(po);
+                renderPoMatricesBuilder(permMap);
                 $id('poCancelEditBtn').classList.remove('hidden');
                 $id('poSaveBtn').innerHTML = '<i class="fas fa-save"></i> Guardar cambios';
             };
@@ -2864,47 +3417,95 @@
         $id('poEditId').value = '';
         $id('poNameInput').value = '';
         $id('poEmailInput').value = '';
-        populatePoMatrixSelect(CONSOLIDATED_MATRIX_ID);
-        $id('poAccessSelect').value = 'edit';
-        $id('poExpiryAmt').value = 30;
-        $id('poExpiryUnit').value = 'days';
-        $id('poExpiryAmtWrap').style.opacity = '1';
-        $id('poExpiryAmtWrap').style.pointerEvents = 'auto';
+        renderPoMatricesBuilder(null);
         $id('poCancelEditBtn').classList.add('hidden');
         $id('poSaveBtn').innerHTML = '<i class="fas fa-key"></i> Generar PIN y Guardar';
     }
 
-    function savePoFromForm() {
+    async function savePoFromForm() {
         const editId = $id('poEditId').value.trim();
         const name = $id('poNameInput').value.trim();
         const email = $id('poEmailInput').value.trim().toLowerCase();
-        const matrixId = $id('poMatrixSelect').value || CONSOLIDATED_MATRIX_ID;
-        const accessType = $id('poAccessSelect').value;
-        const amt = $id('poExpiryAmt').value;
-        const unit = $id('poExpiryUnit').value;
-        const isPermanent = unit === 'permanent';
+        const matrixPermissions = collectPoMatrixPermissionsFromForm();
+        const selectedKeys = Object.keys(matrixPermissions);
 
         if (!name) { customAlert('Atención', 'Ingresa el nombre del Process Owner.'); return; }
         if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { customAlert('Atención', 'Ingresa un correo válido.'); return; }
+        if (selectedKeys.length === 0) { customAlert('Atención', 'Selecciona al menos una matriz para asignar permisos.'); return; }
 
         const duplicate = biaConfig.processOwners.find(x => x.email.toLowerCase() === email && x.id !== editId);
         if (duplicate) { customAlert('Duplicado', 'Ya existe un Process Owner con ese correo.'); return; }
 
-        const expiry = computeExpiryValue(amt, unit);
+        const allVals = Object.values(matrixPermissions);
+        const anyPerm = allVals.some(v => v.isPermanent || v.expiry === 'permanent');
+        const maxExp = anyPerm ? 'permanent' : Math.max(...allVals.map(v => Number(v.expiry) || 0));
+        const anyEdit = allVals.some(v => v.accessType === 'edit');
 
         if (editId) {
             const po = biaConfig.processOwners.find(x => x.id === editId);
             if (po) {
+                const changes = [];
+                if (po.name !== name) {
+                    changes.push(`Nombre: "${po.name}" -> "${name}"`);
+                }
+                if (po.email !== email) {
+                    changes.push(`Correo: "${po.email}" -> "${email}"`);
+                }
+
+                const prevMap = getNormalizedPoMatrixPermissions(po);
+                const allMatIds = new Set([...Object.keys(prevMap), ...Object.keys(matrixPermissions)]);
+                const fmtPerm = (cfg) => {
+                    if (!cfg) return 'Sin acceso';
+                    const accTxt = cfg.accessType === 'view' ? 'Solo consulta' : 'Consultar y editar';
+                    const expTxt = (cfg.isPermanent || cfg.expiry === 'permanent')
+                        ? 'Permanente'
+                        : `${cfg.amount || ''} ${cfg.unit === 'minutes' ? 'min' : (cfg.unit === 'hours' ? 'hrs' : 'días')}`.trim();
+                    return `${accTxt} (${expTxt})`;
+                };
+
+                allMatIds.forEach(mId => {
+                    const mTitle = mId === CONSOLIDATED_MATRIX_ID
+                        ? 'Matriz General'
+                        : (matricesList.find(m => m.id === mId)?.title || mId);
+                    const oldCfg = prevMap[mId] || null;
+                    const newCfg = matrixPermissions[mId] || null;
+
+                    if (!oldCfg && newCfg) {
+                        changes.push(`Matriz agregada "${mTitle}": ${fmtPerm(newCfg)}`);
+                    } else if (oldCfg && !newCfg) {
+                        changes.push(`Matriz retirada "${mTitle}"`);
+                    } else if (oldCfg && newCfg) {
+                        const oldAcc = oldCfg.accessType || 'edit';
+                        const newAcc = newCfg.accessType || 'edit';
+                        const oldPerm = !!(oldCfg.isPermanent || oldCfg.expiry === 'permanent');
+                        const newPerm = !!(newCfg.isPermanent || newCfg.expiry === 'permanent');
+                        const expChanged = (oldPerm !== newPerm) ||
+                            (!newPerm && (Number(oldCfg.amount || 0) !== Number(newCfg.amount || 0) || (oldCfg.unit || '') !== (newCfg.unit || '')));
+
+                        if (oldAcc !== newAcc || expChanged) {
+                            changes.push(`Matriz "${mTitle}": ${fmtPerm(oldCfg)} -> ${fmtPerm(newCfg)}`);
+                        }
+                    }
+                });
+
                 po.name = name;
                 po.email = email;
-                po.matrixId = matrixId;
-                po.accessType = accessType;
-                po.isPermanent = isPermanent;
-                po.expiry = expiry;
+                po.matrixPermissions = matrixPermissions;
+                po.matrixId = selectedKeys.length === 1 ? selectedKeys[0] : ALL_MATRICES_MODE;
+                po.accessType = anyEdit ? 'edit' : 'view';
+                po.isPermanent = anyPerm;
+                po.expiry = maxExp;
+
+                if (changes.length > 0) {
+                    po.lastPermChangeSummary = changes.join('\n• ');
+                    po.lastPermChangeAt = Date.now();
+                }
             }
             resetPoForm();
             saveBiaConfig(true);
+            await syncBiaSettingsToCloud();
             renderPoPermissionsList();
+            refreshOpenPoSelectorModal();
             return;
         }
 
@@ -2912,11 +3513,13 @@
             id: 'po-' + Date.now().toString(36),
             name,
             email,
-            matrixId,
-            accessType,
-            isPermanent,
-            expiry,
+            matrixPermissions,
+            matrixId: selectedKeys.length === 1 ? selectedKeys[0] : ALL_MATRICES_MODE,
+            accessType: anyEdit ? 'edit' : 'view',
+            isPermanent: anyPerm,
+            expiry: maxExp,
             pin: generatePin(8),
+            pinVersion: Date.now(),
             pinSent: false,
             passwordHash: null,
             faceDescriptor: null,
@@ -2926,6 +3529,7 @@
         biaConfig.processOwners.unshift(newPo);
         resetPoForm();
         saveBiaConfig(true);
+        await syncBiaSettingsToCloud();
         renderPoPermissionsList();
     }
 
@@ -2983,10 +3587,11 @@
             } else {
                 registered.forEach(p => {
                     const row = document.createElement('div');
-                    row.style.cssText = 'display:flex; align-items:center; gap:10px; background:var(--bg-elev); padding:8px 12px; border-radius:10px; border:1px solid var(--line);';
+                    row.style.cssText = 'display:flex; align-items:center; gap:10px; background:var(--bg-elev); padding:8px 12px; border-radius:10px; border:1px solid var(--line); cursor:pointer;';
+                    row.title = 'Doble clic o doble tap para gestionar contraseña y correo (clic en foto para agrandar)';
                     const img = p.faceThumb
-                        ? `<img src="${p.faceThumb}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;cursor:zoom-in;flex-shrink:0;" title="Clic para agrandar">`
-                        : `<div style="width:40px;height:40px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex-shrink:0;"><i class="fas fa-user"></i></div>`;
+                        ? `<img src="${p.faceThumb}" data-po-avatar="1" style="width:40px;height:40px;border-radius:50%;object-fit:cover;cursor:zoom-in;flex-shrink:0;" title="Clic para agrandar">`
+                        : `<div data-po-avatar="1" style="width:40px;height:40px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex-shrink:0;"><i class="fas fa-user"></i></div>`;
                     row.innerHTML = `
                         ${img}
                         <div style="flex:1; min-width:0;">
@@ -2995,10 +3600,32 @@
                         </div>
                         <span style="font-size:11px; color:var(--ok); font-weight:700;">${p.faceDescriptor ? 'Rostro + Clave' : 'Clave'}</span>
                     `;
-                    const imgEl = row.querySelector('img');
-                    if (imgEl && p.faceThumb) {
-                        imgEl.onclick = () => openThumbZoom(p.faceThumb, p.name, `${p.email} · ${getMatrixDisplayName(p.matrixId)}`);
+                    const avatarEl = row.querySelector('[data-po-avatar="1"]');
+                    if (avatarEl && p.faceThumb) {
+                        avatarEl.addEventListener('click', (ev) => {
+                            ev.stopPropagation();
+                            openThumbZoom(p.faceThumb, p.name, `${p.email} · ${getMatrixDisplayName(p.matrixId)}`);
+                        });
+                        avatarEl.addEventListener('dblclick', (ev) => {
+                            ev.stopPropagation();
+                        });
                     }
+                    row.addEventListener('dblclick', (ev) => {
+                        if (ev.target.closest('[data-po-avatar="1"]')) return;
+                        openRegisteredPoManageModal(p);
+                    });
+                    let lastTapAt = 0;
+                    row.addEventListener('touchend', (ev) => {
+                        if (ev.target.closest('[data-po-avatar="1"]')) return;
+                        const now = Date.now();
+                        if (now - lastTapAt < 340) {
+                            ev.preventDefault();
+                            lastTapAt = 0;
+                            openRegisteredPoManageModal(p);
+                        } else {
+                            lastTapAt = now;
+                        }
+                    }, { passive: false });
                     regLog.appendChild(row);
                 });
             }
@@ -3044,6 +3671,100 @@
         }
     }
 
+
+    function decodePoStoredPassword(po) {
+        if (!po) return null;
+        if (po.plainPwd) return String(po.plainPwd);
+        if (!po.encodedPwd) return null;
+        try {
+            return decodeURIComponent(escape(atob(String(po.encodedPwd))));
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function openRegisteredPoManageModal(po) {
+        const modal = $id('poRegisteredManageModal');
+        if (!modal || !po) return;
+        const freshPo = (biaConfig.processOwners || []).find(x => x.id === po.id) || po;
+
+        $id('poRegManageName').textContent = freshPo.name || 'Process Owner';
+        $id('poRegManageEmail').textContent = freshPo.email || '';
+        const adminPassInp = $id('poRevealAdminPassInput');
+        const errEl = $id('poRevealPwdError');
+        const boxEl = $id('poRevealedPwdBox');
+        const valEl = $id('poRevealedPwdValue');
+
+        adminPassInp.value = '';
+        errEl.classList.add('hidden');
+        boxEl.classList.add('hidden');
+        valEl.textContent = '—';
+
+        const revealPassword = async () => {
+            if (!biaConfig.backupPasswordHash) {
+                errEl.textContent = 'No hay contraseña de respaldo configurada para el Administrador Principal.';
+                errEl.classList.remove('hidden');
+                return;
+            }
+            if (!verifyPassword(adminPassInp.value, biaConfig.backupPasswordHash)) {
+                errEl.textContent = 'Contraseña de Administrador incorrecta.';
+                errEl.classList.remove('hidden');
+                const snap = await captureSingleIntruderSnapshot();
+                await recordIntruderAttempt(snap, 'password');
+                return;
+            }
+            errEl.classList.add('hidden');
+            const plainPwd = decodePoStoredPassword(freshPo);
+            valEl.textContent = plainPwd || '(No disponible para registros anteriores; solicita Nuevo PIN)';
+            boxEl.classList.remove('hidden');
+        };
+
+        $id('poRevealPwdBtn').onclick = revealPassword;
+        adminPassInp.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                revealPassword();
+            }
+        };
+
+        $id('poSendPwdEmailBtn').onclick = () => {
+            const appName = biaConfig.appName || 'BIA';
+            const url = location.href.split('#')[0];
+            const plainPwd = decodePoStoredPassword(freshPo);
+            const pwdLine = plainPwd
+                ? `Tu contraseña registrada: ${plainPwd}`
+                : `Tu contraseña personal fue configurada al activar tu PIN.`;
+            const subj = encodeURIComponent(`${appName}: Tu contraseña de acceso (${freshPo.name})`);
+            const body = encodeURIComponent(
+                `Hola ${freshPo.name},
+
+` +
+                `${pwdLine}
+
+` +
+                `Si deseas restablecerla o cambiarla, puedes solicitar un nuevo PIN al Administrador para generar una nueva contraseña.
+
+` +
+                `Enlace de acceso: ${url}
+` +
+                `Correo registrado: ${freshPo.email}
+
+` +
+                `- BIA\n` +
+                `- Control Interno | Internal Control Engineering`
+            );
+            window.location.href = `mailto:${encodeURIComponent(freshPo.email)}?subject=${subj}&body=${body}`;
+        };
+
+        $id('poCloseRegManageBtn').onclick = () => modal.classList.remove('active');
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.classList.remove('active');
+        };
+
+        modal.classList.add('active');
+        setTimeout(() => adminPassInp.focus(), 80);
+    }
+
     function applyAdminPermissionsToSettingsModal() {
         // Solo el Administrador Principal ve secciones globales (Apariencia, Marca, Rostros, Seguridad, Accesos).
         // Los demás administradores solo acceden a "Permisos y PIN".
@@ -3087,13 +3808,50 @@
             };
         });
 
-        $id('poExpiryUnit').onchange = (e) => {
-            const isPerm = e.target.value === 'permanent';
-            $id('poExpiryAmtWrap').style.opacity = isPerm ? '.45' : '1';
-            $id('poExpiryAmtWrap').style.pointerEvents = isPerm ? 'none' : 'auto';
+        $id('poToggleAllMatricesBtn').onclick = () => {
+            const checks = Array.from(document.querySelectorAll('#poMatricesBuilderList .po-mat-check'));
+            const allChecked = checks.length > 0 && checks.every(c => c.checked);
+            const nextState = !allChecked;
+            checks.forEach(chk => {
+                chk.checked = nextState;
+                chk.dispatchEvent(new Event('change'));
+            });
+            syncToggleAllMatricesButton();
         };
         $id('poSaveBtn').onclick = savePoFromForm;
         $id('poCancelEditBtn').onclick = resetPoForm;
+
+        let cloudPollCounter = 0;
+        setInterval(async () => {
+            const settingsModal = $id('settingsModal');
+            if (settingsModal && settingsModal.classList.contains('active')) {
+                cloudPollCounter++;
+                if (cloudPollCounter % 2 === 0) {
+                    await pullBiaSettingsFromCloud();
+                }
+                const permPanel = document.querySelector('#settingsPanel [data-panel="permissions"]');
+                if (permPanel && !permPanel.classList.contains('hidden')) {
+                    let needsFullRerender = false;
+                    (biaConfig.processOwners || []).forEach(po => {
+                        const wrap = permPanel.querySelector(`[data-po-status-wrap="${po.id}"]`);
+                        if (!wrap) { needsFullRerender = true; return; }
+                        const wasExp = wrap.getAttribute('data-was-expired') === '1';
+                        const nowExp = isPoExpired(po);
+                        if (wasExp !== nowExp) {
+                            needsFullRerender = true;
+                        } else if (!nowExp) {
+                            const cdEl = permPanel.querySelector(`[data-po-admin-cd="${po.id}"]`);
+                            if (cdEl) cdEl.textContent = formatRemainingCountdown(po);
+                        }
+                    });
+                    if (needsFullRerender) renderPoPermissionsList();
+                }
+                const logsPanel = document.querySelector('#settingsPanel [data-panel="logs"]');
+                if (logsPanel && !logsPanel.classList.contains('hidden')) {
+                    renderAccessAndIntruderLogs();
+                }
+            }
+        }, 1000);
 
         const bindText = (id, key) => {
             const el = $id(id);
@@ -3184,6 +3942,17 @@
 
         $id('cameraToggle').onchange = (e) => { biaConfig.cameraEnabled = e.target.checked; saveBiaConfig(); };
         $id('requirePoPinToggle').onchange = (e) => { biaConfig.requirePoPin = e.target.checked; saveBiaConfig(true); };
+        $id('consolidatedEditableToggle').onchange = (e) => {
+            biaConfig.consolidatedEditable = e.target.checked;
+            saveBiaConfig(true);
+            updateConsolidatedModeUI();
+            renderTabla();
+            if ($id('settingsModal')?.classList.contains('active')) {
+                const curMap = collectPoMatrixPermissionsFromForm();
+                renderPoMatricesBuilder(curMap);
+                renderPoPermissionsList();
+            }
+        };
         $id('savePasswordBtn').onclick = () => {
             if (!isPrimaryAdmin) return;
             const v = $id('backupPasswordInput').value;
@@ -3441,6 +4210,15 @@
             return;
         }
 
+        if (freshPo.pin && (!freshPo.passwordHash && !freshPo.faceDescriptor)) {
+            kickUserWithReason(
+                'Nuevo PIN asignado',
+                'El Administrador te ha asignado un nuevo PIN de activación. Ingresa nuevamente con tu nuevo PIN para continuar.',
+                'fa-key'
+            );
+            return;
+        }
+
         if (isPoExpired(freshPo)) {
             kickUserWithReason(
                 'Plazo vencido',
@@ -3450,53 +4228,95 @@
             return;
         }
 
-        const prevAccess = activeProcessOwner.accessType;
-        const prevMatrix = activeProcessOwner.matrixId;
+        const nextMap = getActivePoMatrixPermissions(freshPo);
+        const nextKeys = Object.keys(nextMap);
+        const prevKeys = Array.isArray(window._poPrevActiveKeys) ? window._poPrevActiveKeys : nextKeys;
+        const expiredMatrixIds = prevKeys.filter(k => !nextMap[k]);
+        const addedMatrixIds = nextKeys.filter(k => !prevKeys.includes(k));
         const prevName = activeProcessOwner.name;
-        const prevIsPerm = !!(activeProcessOwner.isPermanent || activeProcessOwner.expiry === 'permanent');
-        const nextIsPerm = !!(freshPo.isPermanent || freshPo.expiry === 'permanent');
-        const prevExp = activeProcessOwner.expiry;
-        const nextExp = freshPo.expiry;
 
         const changedDiffs = [];
-        if (prevAccess !== freshPo.accessType) {
-            changedDiffs.push(freshPo.accessType === 'view' ? 'Permiso cambiado a Solo lectura' : 'Permiso cambiado a Lectura y edición');
+        if (expiredMatrixIds.length > 0) {
+            const expNames = expiredMatrixIds.map(id => id === CONSOLIDATED_MATRIX_ID
+                ? 'Matriz General'
+                : (matricesList.find(m => m.id === id)?.title || id));
+            changedDiffs.push(`Venció el tiempo de: ${expNames.join(', ')}`);
         }
-        if (prevMatrix !== freshPo.matrixId) {
-            changedDiffs.push(`Matriz asignada actualizada a: ${getMatrixDisplayName(freshPo.matrixId)}`);
+        if (addedMatrixIds.length > 0) {
+            changedDiffs.push('Nuevas matrices habilitadas');
         }
         if (prevName !== freshPo.name) {
             changedDiffs.push(`Nombre actualizado a: ${freshPo.name}`);
         }
-        if (prevIsPerm !== nextIsPerm || (!nextIsPerm && prevExp !== nextExp)) {
-            changedDiffs.push(nextIsPerm ? 'Vigencia cambiada a Permanente' : 'Vigencia actualizada');
-        }
 
+        window._poPrevActiveKeys = nextKeys;
         activeProcessOwner = { ...freshPo };
         localStorage.setItem('bia_active_po_id', freshPo.id);
 
-        if (changedDiffs.length > 0) {
-            if (freshPo.matrixId && freshPo.matrixId !== CONSOLIDATED_MATRIX_ID) {
-                activeMatrixId = freshPo.matrixId;
+        const activeMatrixExpired = !nextMap[activeMatrixId];
+        if (changedDiffs.length > 0 || activeMatrixExpired) {
+            if (activeMatrixExpired) {
+                const prevTabObj = matricesList.find(m => m.id === activeMatrixId);
+                const prevTabName = activeMatrixId === CONSOLIDATED_MATRIX_ID
+                    ? 'Matriz General'
+                    : (prevTabObj ? prevTabObj.title : 'Matriz');
+                activeMatrixId = nextKeys.find(k => k !== CONSOLIDATED_MATRIX_ID) || nextKeys[0] || CONSOLIDATED_MATRIX_ID;
+                filtrosRapidos = { unidadNegocio: "", area: "", tipoMacro: "", macroproceso: "", prioridad: "" };
+                filtrosColumna = {};
+                document.querySelectorAll('.filtro-rapido').forEach(s => s.value = "");
+                mostrarNotificacion(`El tiempo de "${prevTabName}" ha concluido; se cerró automáticamente`, 'warning');
+            } else if (announceChange && changedDiffs.length > 0) {
+                mostrarNotificacion(`Permisos actualizados en tiempo real: ${changedDiffs.join(' · ')}`, 'info');
             }
             updateNavbarRoleControls();
             renderMatricesTabs();
             renderTabla();
             actualizarTodosLosFiltros();
             updateBatchMatrixLabel();
-            if (announceChange) {
-                mostrarNotificacion(`Permisos actualizados en tiempo real: ${changedDiffs.join(' · ')}`, 'info');
+            updatePoPermissionCountdownBadge();
+        }
+    }
+
+    function updatePoPermissionCountdownBadge() {
+        const pill = $id('poPermCountdownPill');
+        if (!pill || currentUserRole !== 'processOwner' || !activeProcessOwner) return;
+        const activeMap = getActivePoMatrixPermissions(activeProcessOwner);
+        const curEntry = activeMap[activeMatrixId] || Object.values(activeMap)[0];
+        const isPerm = curEntry ? (curEntry.isPermanent || curEntry.expiry === 'permanent') : (activeProcessOwner.isPermanent || activeProcessOwner.expiry === 'permanent');
+        const txt = formatRemainingCountdown(activeProcessOwner, activeMatrixId);
+        pill.innerHTML = isPerm
+            ? `<i class="fas fa-infinity mr-1"></i>Vigencia: Permanente`
+            : `<i class="fas fa-hourglass-half mr-1"></i>Tiempo restante de permiso: <strong>${escapeHtml(txt)}</strong>`;
+        if (!isPerm && curEntry) {
+            const rem = Number(curEntry.expiry) - Date.now();
+            if (rem <= 60000) {
+                pill.style.color = 'var(--danger)';
+                pill.style.borderColor = 'var(--danger)';
+            } else if (rem <= 300000) {
+                pill.style.color = 'var(--warn)';
+                pill.style.borderColor = 'var(--warn)';
+            } else {
+                pill.style.color = 'var(--text)';
+                pill.style.borderColor = 'var(--line-2)';
             }
+        } else {
+            pill.style.color = 'var(--ok)';
+            pill.style.borderColor = 'color-mix(in srgb, var(--ok) 35%, transparent)';
         }
     }
 
     function startPoLiveWatcher() {
         if (poWatchInterval) clearInterval(poWatchInterval);
+        window._poPrevActiveKeys = (currentUserRole === 'processOwner' && activeProcessOwner)
+            ? Object.keys(getActivePoMatrixPermissions(activeProcessOwner))
+            : [];
+        updatePoPermissionCountdownBadge();
         poWatchInterval = setInterval(() => {
             if (currentUserRole === 'processOwner' && activeProcessOwner) {
                 enforceActiveUserPermissionsRealtime(false);
+                updatePoPermissionCountdownBadge();
             }
-        }, 4000);
+        }, 1000);
     }
 
     function suscribirCambiosEnTiempoReal() {
@@ -3547,6 +4367,8 @@
                             delete biaConfig.backupPassword;
                             localStorage.setItem('bia_app_config_v2', JSON.stringify(biaConfig));
                             applyBiaConfig();
+                            refreshAdminViewsRealtime();
+                            updateConsolidatedModeUI();
                             enforceActiveUserPermissionsRealtime(true);
                         } else if (row && Number(row.id) === 2 && row.data && Array.isArray(row.data.matricesList)) {
                             const swRows = matricesDataMap[DEFAULT_MATRIX_ID] || [];
@@ -3567,11 +4389,21 @@
     }
 
     // Sincronización entre pestañas del mismo navegador (storage event)
+    function refreshAdminViewsRealtime() {
+        refreshOpenPoSelectorModal();
+        if ($id('settingsModal')?.classList.contains('active')) {
+            renderPoPermissionsList();
+            renderManagerFaceList();
+            renderAccessAndIntruderLogs();
+        }
+    }
+
     window.addEventListener('storage', (e) => {
         if (e.key === 'bia_app_config_v2' && e.newValue) {
             try {
                 biaConfig = { ...BIA_DEFAULT_CONFIG, ...JSON.parse(e.newValue) };
                 applyBiaConfig();
+                refreshAdminViewsRealtime();
                 enforceActiveUserPermissionsRealtime(true);
             } catch (_) {}
         } else if ((e.key === 'bia_matrices_list_v1' || e.key === 'bia_matrices_data_v1') && currentUserRole) {
@@ -3717,8 +4549,14 @@
         return [...COLUMNAS.map(c => c.field), ACTION_COL_KEY];
     }
 
-    function isReadOnlyPo() {
-        return currentUserRole === 'processOwner' && activeProcessOwner && activeProcessOwner.accessType === 'view';
+    function isReadOnlyPo(targetMatrixId = null) {
+        if (currentUserRole !== 'processOwner' || !activeProcessOwner) return false;
+        const mId = targetMatrixId || activeMatrixId;
+        const activeMap = getActivePoMatrixPermissions(activeProcessOwner);
+        const entry = activeMap[mId];
+        if (!entry) return true;
+        if (mId === CONSOLIDATED_MATRIX_ID && biaConfig.consolidatedEditable === false) return true;
+        return entry.accessType === 'view';
     }
 
     function guardarStorage() {
@@ -4144,6 +4982,10 @@
             mostrarNotificacion("Tu perfil tiene permiso de solo consulta", "warning");
             return;
         }
+        if (isConsolidatedEditDisabled()) {
+            mostrarNotificacion("La edición en Matriz General está deshabilitada", "warning");
+            return;
+        }
         const mId = targetMatrixId || (activeMatrixId === CONSOLIDATED_MATRIX_ID ? DEFAULT_MATRIX_ID : activeMatrixId);
         const rows = matricesDataMap[mId] || [];
         const index = rows.findIndex(p => p.id === id);
@@ -4172,6 +5014,10 @@
             mostrarNotificacion("Tu perfil tiene permiso de solo consulta", "warning");
             return;
         }
+        if (isConsolidatedEditDisabled()) {
+            mostrarNotificacion("La edición en Matriz General está deshabilitada", "warning");
+            return;
+        }
         const modal = document.getElementById("editModal");
         const modalTitle = document.getElementById("modalTitle");
         const textarea = document.getElementById("modalTextarea");
@@ -4198,6 +5044,10 @@
         if (!cell || !cell.classList.contains('editable-cell')) return;
         if (isReadOnlyPo()) {
             mostrarNotificacion("Tu perfil tiene permiso de solo consulta", "warning");
+            return;
+        }
+        if (isConsolidatedEditDisabled()) {
+            mostrarNotificacion("La edición en Matriz General está deshabilitada", "warning");
             return;
         }
         const field = cell.getAttribute('data-field');
@@ -4430,6 +5280,10 @@
     window.eliminarFila = async (id, matrixId = null) => {
         if (isReadOnlyPo()) {
             mostrarNotificacion("Tu perfil tiene permiso de solo consulta", "warning");
+            return;
+        }
+        if (isConsolidatedEditDisabled()) {
+            mostrarNotificacion("La eliminación en Matriz General está deshabilitada", "warning");
             return;
         }
         const mId = matrixId || (activeMatrixId === CONSOLIDATED_MATRIX_ID ? DEFAULT_MATRIX_ID : activeMatrixId);
@@ -4808,9 +5662,19 @@
             };
         }
 
-        // Si el Process Owner tiene asignada una matriz específica, activar esa pestaña
-        if (currentUserRole === 'processOwner' && activeProcessOwner && activeProcessOwner.matrixId) {
-            activeMatrixId = activeProcessOwner.matrixId;
+        // Si el Process Owner tiene matrices asignadas, activar la primera permitida
+        if (currentUserRole === 'processOwner' && activeProcessOwner) {
+            const activeMap = getActivePoMatrixPermissions(activeProcessOwner);
+            const keys = Object.keys(activeMap);
+            if (keys.length === 1) {
+                activeMatrixId = keys[0];
+            } else if (activeMap[CONSOLIDATED_MATRIX_ID]) {
+                activeMatrixId = CONSOLIDATED_MATRIX_ID;
+            } else if (keys.length > 0) {
+                activeMatrixId = keys[0];
+            } else {
+                activeMatrixId = CONSOLIDATED_MATRIX_ID;
+            }
         } else {
             activeMatrixId = CONSOLIDATED_MATRIX_ID;
         }
@@ -4857,9 +5721,12 @@
         if (banner) {
             if (currentUserRole === 'processOwner' && activeProcessOwner) {
                 banner.classList.remove('hidden');
-                const modeTxt = activeProcessOwner.accessType === 'view' ? 'Solo lectura' : 'Lectura y edición';
-                const matTxt = getMatrixDisplayName(activeProcessOwner.matrixId);
+                const modeTxt = isReadOnlyPo(activeMatrixId) ? 'Solo lectura' : 'Lectura y edición';
+                const matTxt = activeMatrixId === CONSOLIDATED_MATRIX_ID
+                    ? 'Matriz General'
+                    : (matricesList.find(m => m.id === activeMatrixId)?.title || getMatrixDisplayName(activeProcessOwner));
                 $id('poActiveName').textContent = `${activeProcessOwner.name} · ${matTxt} (${modeTxt})`;
+                updatePoPermissionCountdownBadge();
             } else {
                 banner.classList.add('hidden');
             }
@@ -4925,12 +5792,18 @@
         isClosingSession = false;
     }
 
-    async function syncCloudStateBeforeLogin() {
+    async function syncCloudStateBeforeLogin(maxWaitMs = 2200) {
         try {
             if (!supabaseClient) initSupabase();
             if (supabaseClient) {
-                await pullBiaSettingsFromCloud();
-                await pullMatricesMetaFromCloud();
+                const fetchTask = Promise.all([
+                    pullBiaSettingsFromCloud(),
+                    pullMatricesMetaFromCloud()
+                ]);
+                await Promise.race([
+                    fetchTask,
+                    new Promise(resolve => setTimeout(resolve, maxWaitMs))
+                ]);
                 suscribirCambiosEnTiempoReal();
             }
         } catch (_) {}
@@ -4945,12 +5818,11 @@
         if (cargarSesion()) {
             iniciarSesion(currentUserRole, isPrimaryAdmin, activeAdminName);
         } else {
-            renderCarouselLogin();
-            runIntroAnimation();
-            await syncCloudStateBeforeLogin();
+            await syncCloudStateBeforeLogin(2200);
             loadMatricesState();
             applyBiaConfig();
             renderCarouselLogin();
+            runIntroAnimation();
         }
     });
 </script>
