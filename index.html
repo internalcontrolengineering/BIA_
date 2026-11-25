@@ -506,8 +506,25 @@
         .matriz-table tbody tr:nth-child(even) td { background-color: var(--table-row-even); }
         .matriz-table tbody tr:nth-child(odd) td { background-color: var(--table-row-odd); }
         .matriz-table tbody tr:hover td { background-color: var(--table-row-hover) !important; }
-        .editable-cell { cursor: pointer; }
-        .editable-cell:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
+        .editable-cell { cursor: pointer; position: relative; }
+        .editable-cell:hover { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
+        .editable-cell.excel-selected,
+        .action-cell.excel-selected {
+            box-shadow: inset 0 0 0 2px var(--accent) !important;
+            background-color: var(--accent-soft) !important;
+            outline: none;
+        }
+        .matriz-table th { user-select: none; }
+        .resize-handle {
+            position: absolute; top: 0; right: -4px; width: 9px; height: 100%;
+            cursor: col-resize; background: transparent; z-index: 45;
+            transition: background-color 0.15s;
+        }
+        .resize-handle:hover,
+        .resize-handle.resizing {
+            background-color: var(--accent);
+            opacity: 0.65;
+        }
         .editable-cell select {
             background: var(--bg-elev); color: var(--text); border: 1px solid var(--accent);
             border-radius: 8px; padding: 4px 6px; font-size: 0.78rem;
@@ -2476,10 +2493,85 @@
         }, 40);
     }
 
-    async function activatePoWithPin(po) {
-        const enteredPin = await customPrompt('PIN de un solo uso', `Hola ${po.name}, ingresa el PIN que recibiste por correo:`);
+    function validatePoPinSpaces(pin) {
+        const val = String(pin ?? '');
+        if (!val) return 'Ingresa el PIN de un solo uso.';
+        const hasBefore = /^\s/.test(val);
+        const hasAfter = /\s$/.test(val);
+        const trimmed = val.replace(/^\s+|\s+$/g, '');
+        const hasBetween = /\s/.test(trimmed);
+        if (hasBefore || hasAfter || hasBetween) {
+            const pos = [];
+            if (hasBefore) pos.push('antes');
+            if (hasBetween) pos.push('en medio');
+            if (hasAfter) pos.push('después');
+            const ubicacion = pos.length === 1
+                ? pos[0]
+                : (pos.slice(0, -1).join(', ') + ' y ' + pos[pos.length - 1]);
+            return `El PIN no debe contener espacios (se detectó espacio ${ubicacion} del PIN).`;
+        }
+        return null;
+    }
+
+    async function activatePoWithPin(po, prefillVal = '') {
+        const inp = $id('customDialogInput');
+        let activePinPrompt = true;
+
+        const cleanupPinListeners = () => {
+            activePinPrompt = false;
+            if (inp) {
+                inp.removeEventListener('paste', onPinPaste);
+                inp.removeEventListener('input', onPinInput);
+            }
+        };
+
+        const triggerSpaceAlert = (badVal, errMsg) => {
+            if (!activePinPrompt) return;
+            cleanupPinListeners();
+            $id('customDialogModal').classList.remove('active');
+            dialogResolve = null;
+            customAlert('PIN no válido', errMsg, 'fa-exclamation-triangle').then(() => {
+                activatePoWithPin(po, badVal);
+            });
+        };
+
+        const onPinPaste = () => {
+            setTimeout(() => {
+                if (!activePinPrompt || !inp) return;
+                const val = inp.value;
+                if (/\s/.test(val)) {
+                    const errMsg = validatePoPinSpaces(val) || 'El PIN no debe contener espacios.';
+                    triggerSpaceAlert(val, errMsg);
+                }
+            }, 0);
+        };
+
+        const onPinInput = () => {
+            if (!inp) return;
+            const val = inp.value;
+            if (/\s/.test(val)) {
+                const errMsg = validatePoPinSpaces(val) || 'El PIN no debe contener espacios.';
+                triggerSpaceAlert(val, errMsg);
+            }
+        };
+
+        if (inp) {
+            inp.addEventListener('paste', onPinPaste);
+            inp.addEventListener('input', onPinInput);
+        }
+
+        const enteredPin = await customPrompt('PIN de un solo uso', `Hola ${po.name}, ingresa el PIN que recibiste por correo (sin espacios):`, prefillVal);
+        cleanupPinListeners();
+        if (inp) inp.value = '';
         if (enteredPin === null) return;
-        const clean = String(enteredPin).trim().toUpperCase();
+
+        const spaceErr = validatePoPinSpaces(enteredPin);
+        if (spaceErr) {
+            await customAlert('PIN no válido', spaceErr, 'fa-exclamation-triangle');
+            return activatePoWithPin(po, enteredPin);
+        }
+
+        const clean = String(enteredPin).toUpperCase();
         if (!po.pin || clean !== String(po.pin).toUpperCase()) {
             await customAlert('PIN incorrecto', 'El PIN no coincide. Verifica tu correo o solicita un reenvío al Administrador.', 'fa-times-circle');
             return;
@@ -3269,6 +3361,121 @@
         }
     }
 
+    let poEnforcementRunning = false;
+    let poWatchInterval = null;
+
+    function closeAnyOpenEditOrDropdown() {
+        document.querySelectorAll('.multi-select-dropdown.open').forEach(d => d.classList.remove('open'));
+        const editM = document.getElementById('editModal');
+        if (editM) editM.classList.add('hidden');
+        const setM = document.getElementById('settingsModal');
+        if (setM) setM.classList.remove('active');
+    }
+
+    async function kickUserWithReason(title, message, icon = 'fa-clock') {
+        if (poEnforcementRunning) return;
+        poEnforcementRunning = true;
+        try {
+            closeAnyOpenEditOrDropdown();
+            currentUserRole = null;
+            isPrimaryAdmin = false;
+            activeProcessOwner = null;
+            localStorage.removeItem("bia_session_role");
+            localStorage.removeItem("bia_session_time");
+            localStorage.removeItem("bia_session_is_primary");
+            localStorage.removeItem("bia_session_admin_name");
+            localStorage.removeItem("bia_active_po_id");
+            if (sessionTimeout) { clearTimeout(sessionTimeout); sessionTimeout = null; }
+            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            if (poWatchInterval) { clearInterval(poWatchInterval); poWatchInterval = null; }
+
+            document.getElementById('mainApp').style.display = 'none';
+            document.getElementById('loginScreen').style.display = 'flex';
+            updateNavbarRoleControls();
+            renderCarouselLogin();
+            await customAlert(title, message, icon);
+        } finally {
+            poEnforcementRunning = false;
+        }
+    }
+
+    function enforceActiveUserPermissionsRealtime(announceChange = false) {
+        if (currentUserRole !== 'processOwner') return;
+        if (!activeProcessOwner) return;
+
+        const latestList = Array.isArray(biaConfig.processOwners) ? biaConfig.processOwners : [];
+        const freshPo = latestList.find(p =>
+            (activeProcessOwner.id && p.id === activeProcessOwner.id) ||
+            (activeProcessOwner.email && p.email && p.email.toLowerCase() === activeProcessOwner.email.toLowerCase())
+        );
+
+        if (!freshPo) {
+            kickUserWithReason(
+                'Acceso revocado',
+                'El Administrador ha revocado tus permisos como Process Owner. Tu sesión se ha cerrado.',
+                'fa-user-slash'
+            );
+            return;
+        }
+
+        if (isPoExpired(freshPo)) {
+            kickUserWithReason(
+                'Plazo vencido',
+                'El plazo de vigencia de tus permisos como Process Owner ha vencido. Ya no tienes acceso.',
+                'fa-clock'
+            );
+            return;
+        }
+
+        const prevAccess = activeProcessOwner.accessType;
+        const prevMatrix = activeProcessOwner.matrixId;
+        const prevName = activeProcessOwner.name;
+        const prevIsPerm = !!(activeProcessOwner.isPermanent || activeProcessOwner.expiry === 'permanent');
+        const nextIsPerm = !!(freshPo.isPermanent || freshPo.expiry === 'permanent');
+        const prevExp = activeProcessOwner.expiry;
+        const nextExp = freshPo.expiry;
+
+        const changedDiffs = [];
+        if (prevAccess !== freshPo.accessType) {
+            changedDiffs.push(freshPo.accessType === 'view' ? 'Permiso cambiado a Solo lectura' : 'Permiso cambiado a Lectura y edición');
+        }
+        if (prevMatrix !== freshPo.matrixId) {
+            changedDiffs.push(`Matriz asignada actualizada a: ${getMatrixDisplayName(freshPo.matrixId)}`);
+        }
+        if (prevName !== freshPo.name) {
+            changedDiffs.push(`Nombre actualizado a: ${freshPo.name}`);
+        }
+        if (prevIsPerm !== nextIsPerm || (!nextIsPerm && prevExp !== nextExp)) {
+            changedDiffs.push(nextIsPerm ? 'Vigencia cambiada a Permanente' : 'Vigencia actualizada');
+        }
+
+        activeProcessOwner = { ...freshPo };
+        localStorage.setItem('bia_active_po_id', freshPo.id);
+
+        if (changedDiffs.length > 0) {
+            if (freshPo.matrixId && freshPo.matrixId !== CONSOLIDATED_MATRIX_ID) {
+                activeMatrixId = freshPo.matrixId;
+            }
+            updateNavbarRoleControls();
+            renderMatricesTabs();
+            renderTabla();
+            actualizarTodosLosFiltros();
+            updateBatchMatrixLabel();
+            if (announceChange) {
+                mostrarNotificacion(`Permisos actualizados en tiempo real: ${changedDiffs.join(' · ')}`, 'info');
+            }
+        }
+    }
+
+    function startPoLiveWatcher() {
+        if (poWatchInterval) clearInterval(poWatchInterval);
+        poWatchInterval = setInterval(() => {
+            if (currentUserRole === 'processOwner' && activeProcessOwner) {
+                enforceActiveUserPermissionsRealtime(false);
+            }
+        }, 4000);
+    }
+
     function suscribirCambiosEnTiempoReal() {
         if (!supabaseClient || isRealtimeEnabled) return;
         try {
@@ -3309,9 +3516,49 @@
                             break;
                     }
                 })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'bia_settings' }, async (payload) => {
+                    try {
+                        const row = payload.new;
+                        if (row && Number(row.id) === 1 && row.data && typeof row.data === 'object') {
+                            biaConfig = { ...BIA_DEFAULT_CONFIG, ...row.data };
+                            delete biaConfig.backupPassword;
+                            localStorage.setItem('bia_app_config_v2', JSON.stringify(biaConfig));
+                            applyBiaConfig();
+                            enforceActiveUserPermissionsRealtime(true);
+                        } else if (row && Number(row.id) === 2 && row.data && Array.isArray(row.data.matricesList)) {
+                            const swRows = matricesDataMap[DEFAULT_MATRIX_ID] || [];
+                            matricesList = row.data.matricesList.length ? row.data.matricesList : [{ id: DEFAULT_MATRIX_ID, title: 'Operaciones SW', isDefault: true }];
+                            matricesDataMap = { ...(row.data.matricesDataMap || {}), [DEFAULT_MATRIX_ID]: swRows };
+                            matricesList.forEach(m => { if (!Array.isArray(matricesDataMap[m.id])) matricesDataMap[m.id] = []; });
+                            localStorage.setItem('bia_matrices_list_v1', JSON.stringify(matricesList));
+                            localStorage.setItem('bia_matrices_data_v1', JSON.stringify(matricesDataMap));
+                            renderMatricesTabs();
+                            renderTabla();
+                            actualizarTodosLosFiltros();
+                            enforceActiveUserPermissionsRealtime(true);
+                        }
+                    } catch (_) {}
+                })
                 .subscribe((status) => { if (status === 'SUBSCRIBED') isRealtimeEnabled = true; });
         } catch (_) {}
     }
+
+    // Sincronización entre pestañas del mismo navegador (storage event)
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'bia_app_config_v2' && e.newValue) {
+            try {
+                biaConfig = { ...BIA_DEFAULT_CONFIG, ...JSON.parse(e.newValue) };
+                applyBiaConfig();
+                enforceActiveUserPermissionsRealtime(true);
+            } catch (_) {}
+        } else if ((e.key === 'bia_matrices_list_v1' || e.key === 'bia_matrices_data_v1') && currentUserRole) {
+            loadMatricesState();
+            renderMatricesTabs();
+            renderTabla();
+            actualizarTodosLosFiltros();
+            enforceActiveUserPermissionsRealtime(true);
+        }
+    });
 
     // ==========================================
     // CONFIGURACIÓN DE TIEMPO DE SESIÓN
@@ -3431,8 +3678,21 @@
         { field: "registro", label: "Registro", expected: "Registro", tipo: "text" }
     ];
 
-    let nextId = 1, filtrosRapidos = { unidadNegocio: "", area: "", tipoMacro: "", macroproceso: "", prioridad: "" }, filtrosColumna = {}, columnWidth = 160;
+    const DEFAULT_COL_WIDTH = 170;
+    const ACTION_COL_KEY = '__action__';
+    let nextId = 1, filtrosRapidos = { unidadNegocio: "", area: "", tipoMacro: "", macroproceso: "", prioridad: "" }, filtrosColumna = {};
+    let columnWidths = {};
+    let selectedCellCoords = { row: -1, col: -1 };
     let isUpdatingGlobal = false;
+
+    function getColWidth(colKey) {
+        const w = Number(columnWidths[colKey]);
+        return (Number.isFinite(w) && w >= 80 && w <= 900) ? w : DEFAULT_COL_WIDTH;
+    }
+
+    function getAllColumnKeys() {
+        return [...COLUMNAS.map(c => c.field), ACTION_COL_KEY];
+    }
 
     function isReadOnlyPo() {
         return currentUserRole === 'processOwner' && activeProcessOwner && activeProcessOwner.accessType === 'view';
@@ -3441,7 +3701,7 @@
     function guardarStorage() {
         localStorage.setItem("mapaProcesosDataFinalV17", JSON.stringify(matricesDataMap[DEFAULT_MATRIX_ID] || []));
         localStorage.setItem("nextIdFinalV17", nextId);
-        localStorage.setItem("columnWidthFinalV17", columnWidth);
+        localStorage.setItem("columnWidthsIndividualV1", JSON.stringify(columnWidths));
     }
 
     function cargarStorage() {
@@ -3454,17 +3714,57 @@
         }
         const allIds = Object.values(matricesDataMap).flat().map(p => Number(p.id) || 0);
         nextId = Math.max(parseInt(localStorage.getItem("nextIdFinalV17"), 10) || 1, ...allIds, 0) + 1;
-        const savedWidth = localStorage.getItem("columnWidthFinalV17");
-        if (savedWidth) columnWidth = parseInt(savedWidth, 10);
+
+        try {
+            const savedMap = localStorage.getItem("columnWidthsIndividualV1");
+            if (savedMap) {
+                const parsed = JSON.parse(savedMap);
+                if (parsed && typeof parsed === 'object') columnWidths = parsed;
+            } else {
+                const legacySingle = parseInt(localStorage.getItem("columnWidthFinalV17"), 10);
+                if (Number.isFinite(legacySingle) && legacySingle >= 80) {
+                    getAllColumnKeys().forEach(k => { columnWidths[k] = legacySingle; });
+                }
+            }
+        } catch (_) {}
     }
 
-    function aplicarAnchoTodasColumnas(nuevoAncho) {
-        columnWidth = nuevoAncho;
+    function aplicarAnchoColumnaIndividual(colIndex, colKey, nuevoAncho) {
+        const clamped = Math.max(80, Math.min(900, Math.round(nuevoAncho)));
+        columnWidths[colKey] = clamped;
+
         const ths = document.querySelectorAll('#tableHead th');
-        for (let i = 0; i < ths.length; i++) { ths[i].style.width = columnWidth + 'px'; ths[i].style.minWidth = columnWidth + 'px'; }
+        if (ths[colIndex]) {
+            ths[colIndex].style.width = clamped + 'px';
+            ths[colIndex].style.minWidth = clamped + 'px';
+            ths[colIndex].style.maxWidth = clamped + 'px';
+        }
         const filas = document.querySelectorAll('#tablaBody tr');
-        for (const fila of filas) { const celdas = fila.querySelectorAll('td'); for (let i = 0; i < celdas.length; i++) celdas[i].style.width = columnWidth + 'px'; }
+        for (const fila of filas) {
+            const celdas = fila.querySelectorAll('td');
+            if (celdas[colIndex]) {
+                celdas[colIndex].style.width = clamped + 'px';
+                celdas[colIndex].style.minWidth = clamped + 'px';
+                celdas[colIndex].style.maxWidth = clamped + 'px';
+            }
+        }
         guardarStorage();
+    }
+
+    function autoAjustarColumnaIndividual(colIndex, colKey) {
+        const ths = document.querySelectorAll('#tableHead th');
+        let maxLen = (ths[colIndex]?.innerText || '').split('\n')[0].trim().length;
+        const filas = document.querySelectorAll('#tablaBody tr');
+        for (const fila of filas) {
+            const td = fila.querySelectorAll('td')[colIndex];
+            if (!td) continue;
+            const lines = (td.innerText || '').split('\n');
+            for (const line of lines) {
+                if (line.length > maxLen) maxLen = line.length;
+            }
+        }
+        const ideal = Math.max(110, Math.min(520, maxLen * 8 + 36));
+        aplicarAnchoColumnaIndividual(colIndex, colKey, ideal);
     }
 
     function normalizarTexto(texto) {
@@ -3761,8 +4061,9 @@
         const thead = document.getElementById("tableHead");
         let html = '<tr>';
         COLUMNAS.forEach((col, i) => {
+            const w = getColWidth(col.field);
             html += `
-                <th class="font-extrabold" style="width: ${columnWidth}px; min-width: ${columnWidth}px; position: sticky; top: 0; background-color: #e0e0e0; z-index: 30;">
+                <th class="font-extrabold" data-col-idx="${i}" data-col-key="${col.field}" style="width: ${w}px; min-width: ${w}px; max-width: ${w}px; position: sticky; top: 0; z-index: 30;">
                     ${col.label}
                     <div class="multi-select" id="multi_${col.field}">
                         <div class="multi-select-trigger" data-field="${col.field}"><span class="placeholder">Todos</span></div>
@@ -3771,24 +4072,41 @@
                             <div class="multi-select-options" id="options_${col.field}"></div>
                         </div>
                     </div>
-                    <div class="resize-handle" data-col="${i}" style="z-index: 40;"></div>
+                    <div class="resize-handle" data-col="${i}" data-col-key="${col.field}" title="Arrastra para ajustar ancho · Doble clic para autoajustar"></div>
                 </th>`;
         });
-        html += `<th class="font-extrabold" style="width: ${columnWidth}px; min-width: ${columnWidth}px; position: sticky; top: 0; background-color: #e0e0e0; z-index: 30;">Acción / Origen<div class="resize-handle" data-col="${COLUMNAS.length}" style="z-index: 40;"></div></th>`;
+        const actionW = getColWidth(ACTION_COL_KEY);
+        html += `<th class="font-extrabold" data-col-idx="${COLUMNAS.length}" data-col-key="${ACTION_COL_KEY}" style="width: ${actionW}px; min-width: ${actionW}px; max-width: ${actionW}px; position: sticky; top: 0; z-index: 30;">Acción / Origen<div class="resize-handle" data-col="${COLUMNAS.length}" data-col-key="${ACTION_COL_KEY}" title="Arrastra para ajustar ancho · Doble clic para autoajustar"></div></th></tr>`;
         thead.innerHTML = html;
 
         COLUMNAS.forEach(col => initMultiSelect(col.field));
 
         document.querySelectorAll('.resize-handle').forEach(handle => {
+            handle.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const colIdx = parseInt(handle.getAttribute('data-col'), 10);
+                const colKey = handle.getAttribute('data-col-key');
+                autoAjustarColumnaIndividual(colIdx, colKey);
+            });
+
             handle.addEventListener('mousedown', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
+                const colIdx = parseInt(handle.getAttribute('data-col'), 10);
+                const colKey = handle.getAttribute('data-col-key');
                 const startX = e.clientX;
-                const startWidth = columnWidth;
+                const startWidth = getColWidth(colKey);
+                handle.classList.add('resizing');
+                document.body.style.cursor = 'col-resize';
+
                 const onMouseMove = (moveEvent) => {
                     const newWidth = startWidth + (moveEvent.clientX - startX);
-                    if (newWidth >= 100 && newWidth <= 500) aplicarAnchoTodasColumnas(newWidth);
+                    aplicarAnchoColumnaIndividual(colIdx, colKey, newWidth);
                 };
                 const onMouseUp = () => {
+                    handle.classList.remove('resizing');
+                    document.body.style.cursor = '';
                     window.removeEventListener('mousemove', onMouseMove);
                     window.removeEventListener('mouseup', onMouseUp);
                 };
@@ -3853,6 +4171,91 @@
         modal.onclick = (e) => { if (e.target === modal) cerrarModal(); };
     }
 
+    function triggerCellEdit(cell) {
+        if (!cell || !cell.classList.contains('editable-cell')) return;
+        if (isReadOnlyPo()) {
+            mostrarNotificacion("Tu perfil tiene permiso de solo consulta", "warning");
+            return;
+        }
+        const field = cell.getAttribute('data-field');
+        const id = parseInt(cell.getAttribute('data-id'), 10);
+        const mId = cell.getAttribute('data-matrix-id');
+        const tipo = cell.getAttribute('data-tipo');
+        const opciones = JSON.parse(cell.getAttribute('data-opciones') || '[]');
+        const label = cell.getAttribute('data-label') || field;
+        let currentValue = cell.innerText === '—' ? '' : cell.innerText;
+        if (tipo === 'select') {
+            if (cell.querySelector('select')) return;
+            const select = document.createElement('select');
+            select.innerHTML = '<option value="">Seleccionar...</option>';
+            opciones.forEach(opt => { select.innerHTML += `<option value="${opt}" ${currentValue === opt ? 'selected' : ''}>${opt}</option>`; });
+            select.className = "w-full border rounded px-1 py-1";
+            cell.innerHTML = '';
+            cell.appendChild(select);
+            select.focus();
+            select.addEventListener('change', async () => { await editarYSincronizar(id, field, select.value, mId); });
+            select.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Escape') {
+                    ev.stopPropagation();
+                    renderTabla();
+                    selectTableCell(selectedCellCoords.row, selectedCellCoords.col, true);
+                }
+            });
+        } else {
+            abrirModalEdicion(field, id, currentValue, label, mId);
+        }
+    }
+
+    function selectTableCell(rowIdx, colIdx, shouldFocus = true) {
+        const tbody = document.getElementById("tablaBody");
+        if (!tbody) return;
+        const rows = tbody.querySelectorAll('tr[data-row-idx]');
+        if (!rows.length) {
+            selectedCellCoords = { row: -1, col: -1 };
+            return;
+        }
+        const maxRow = rows.length - 1;
+        const maxCol = COLUMNAS.length; // incluye columna Acción / Origen
+        const r = Math.max(0, Math.min(maxRow, rowIdx));
+        const c = Math.max(0, Math.min(maxCol, colIdx));
+
+        tbody.querySelectorAll('td.excel-selected').forEach(td => td.classList.remove('excel-selected'));
+        const targetRow = rows[r];
+        const targetCell = targetRow ? targetRow.querySelector(`td[data-col-idx="${c}"]`) : null;
+        if (!targetCell) return;
+
+        selectedCellCoords = { row: r, col: c };
+        targetCell.classList.add('excel-selected');
+        if (shouldFocus) {
+            targetCell.focus({ preventScroll: true });
+            ensureCellVisibleInContainer(targetCell);
+        }
+    }
+
+    function ensureCellVisibleInContainer(cell) {
+        const container = document.querySelector('.table-container');
+        const thead = document.getElementById('tableHead');
+        if (!container || !cell) return;
+
+        const cRect = container.getBoundingClientRect();
+        const cellRect = cell.getBoundingClientRect();
+        const headHeight = thead ? thead.getBoundingClientRect().height : 0;
+
+        // Desplazamiento vertical compensando el encabezado sticky
+        if (cellRect.top < cRect.top + headHeight) {
+            container.scrollTop -= (cRect.top + headHeight - cellRect.top) + 6;
+        } else if (cellRect.bottom > cRect.bottom) {
+            container.scrollTop += (cellRect.bottom - cRect.bottom) + 6;
+        }
+
+        // Desplazamiento horizontal
+        if (cellRect.left < cRect.left) {
+            container.scrollLeft -= (cRect.left - cellRect.left) + 8;
+        } else if (cellRect.right > cRect.right) {
+            container.scrollLeft += (cellRect.right - cRect.right) + 8;
+        }
+    }
+
     function renderTabla() {
         const dataFiltrada = getDataFiltrada();
         const totalEnVista = getActiveRows().length;
@@ -3862,13 +4265,15 @@
         if (dataFiltrada.length === 0) {
             tbody.innerHTML = '<tr><td colspan="15" class="text-center py-10 text-gray-400">📋 No hay procesos registrados en esta vista.</td></tr>';
             document.getElementById("contadorRegistros").innerText = "0 registros";
+            selectedCellCoords = { row: -1, col: -1 };
             return;
         }
         let html = "";
-        for (const item of dataFiltrada) {
+        dataFiltrada.forEach((item, rIdx) => {
             const rowMatId = item._sourceMatrixId || activeMatrixId;
-            html += `<tr data-id="${item.id}" data-matrix-id="${escapeHtml(rowMatId)}">`;
-            for (const col of COLUMNAS) {
+            html += `<tr data-id="${item.id}" data-row-idx="${rIdx}" data-matrix-id="${escapeHtml(rowMatId)}">`;
+            COLUMNAS.forEach((col, cIdx) => {
+                const w = getColWidth(col.field);
                 let valor = item[col.field] || '';
                 let display = valor;
                 if (col.field === 'prioridad' && valor) {
@@ -3879,45 +4284,95 @@
                 } else {
                     display = escapeHtml(valor);
                 }
-                html += `<td style="width:${columnWidth}px;min-width:${columnWidth}px;" class="editable-cell" data-field="${col.field}" data-id="${item.id}" data-matrix-id="${escapeHtml(rowMatId)}" data-tipo="${col.tipo}" data-opciones='${JSON.stringify(col.opciones || [])}' data-label="${col.label}">${display || '—'}</td>`;
-            }
+                html += `<td tabindex="0" data-row-idx="${rIdx}" data-col-idx="${cIdx}" style="width:${w}px;min-width:${w}px;max-width:${w}px;" class="editable-cell" data-field="${col.field}" data-id="${item.id}" data-matrix-id="${escapeHtml(rowMatId)}" data-tipo="${col.tipo}" data-opciones='${JSON.stringify(col.opciones || [])}' data-label="${col.label}">${display || '—'}</td>`;
+            });
+            const actionW = getColWidth(ACTION_COL_KEY);
             const originTag = isConsolidated && item._sourceMatrixTitle
                 ? `<div class="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full mb-1 truncate" title="${escapeHtml(item._sourceMatrixTitle)}">${escapeHtml(item._sourceMatrixTitle)}</div>`
                 : '';
-            html += `<td style="width:${columnWidth}px;min-width:${columnWidth}px;" class="text-center">${originTag}<button onclick="eliminarFila(${item.id}, '${escapeHtml(rowMatId)}')" class="text-red-500 hover:text-red-700" title="Eliminar fila"><i class="fas fa-trash-alt"></i></button></td></tr>`;
-        }
+            html += `<td tabindex="0" data-row-idx="${rIdx}" data-col-idx="${COLUMNAS.length}" style="width:${actionW}px;min-width:${actionW}px;max-width:${actionW}px;" class="action-cell text-center">${originTag}<button onclick="eliminarFila(${item.id}, '${escapeHtml(rowMatId)}')" class="text-red-500 hover:text-red-700" title="Eliminar fila"><i class="fas fa-trash-alt"></i></button></td></tr>`;
+        });
         tbody.innerHTML = html;
         document.getElementById("contadorRegistros").innerText = `${dataFiltrada.length} registros (total vista: ${totalEnVista})`;
 
-        document.querySelectorAll('.editable-cell').forEach(cell => {
-            cell.addEventListener('dblclick', () => {
-                if (isReadOnlyPo()) {
-                    mostrarNotificacion("Tu perfil tiene permiso de solo consulta", "warning");
-                    return;
-                }
-                const field = cell.getAttribute('data-field');
-                const id = parseInt(cell.getAttribute('data-id'), 10);
-                const mId = cell.getAttribute('data-matrix-id');
-                const tipo = cell.getAttribute('data-tipo');
-                const opciones = JSON.parse(cell.getAttribute('data-opciones') || '[]');
-                const label = cell.getAttribute('data-label') || field;
-                let currentValue = cell.innerText === '—' ? '' : cell.innerText;
-                if (tipo === 'select') {
-                    if (cell.querySelector('select')) return;
-                    const select = document.createElement('select');
-                    select.innerHTML = '<option value="">Seleccionar...</option>';
-                    opciones.forEach(opt => { select.innerHTML += `<option value="${opt}" ${currentValue === opt ? 'selected' : ''}>${opt}</option>`; });
-                    select.className = "w-full border rounded px-1 py-1";
-                    cell.innerHTML = '';
-                    cell.appendChild(select);
-                    select.focus();
-                    select.addEventListener('change', async () => { await editarYSincronizar(id, field, select.value, mId); });
-                } else {
-                    abrirModalEdicion(field, id, currentValue, label, mId);
-                }
+        tbody.querySelectorAll('td[data-row-idx]').forEach(cell => {
+            cell.addEventListener('click', () => {
+                const r = parseInt(cell.getAttribute('data-row-idx'), 10);
+                const c = parseInt(cell.getAttribute('data-col-idx'), 10);
+                selectTableCell(r, c, false);
             });
+            if (cell.classList.contains('editable-cell')) {
+                cell.addEventListener('dblclick', () => triggerCellEdit(cell));
+            }
         });
+
+        // Restaurar selección de celda activa si sigue dentro de rango
+        if (selectedCellCoords.row >= 0 && selectedCellCoords.col >= 0) {
+            selectTableCell(selectedCellCoords.row, selectedCellCoords.col, false);
+        }
     }
+
+    // Navegación tipo Excel con flechas (Arriba, Abajo, Izquierda, Derecha), Tab, Enter y F2
+    document.addEventListener('keydown', (e) => {
+        const navKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter', 'F2'];
+        if (!navKeys.includes(e.key)) return;
+
+        // Ignorar si hay algún modal abierto o si el foco está en un input/textarea/select
+        if (document.querySelector('.ms-modal-overlay.active, .face-scan-overlay.visible')) return;
+        const editM = document.getElementById('editModal');
+        if (editM && !editM.classList.contains('hidden')) return;
+        if (document.querySelector('.multi-select-dropdown.open')) return;
+
+        const activeEl = document.activeElement;
+        if (activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)) return;
+
+        const mainApp = document.getElementById('mainApp');
+        const contentMatriz = document.getElementById('contentMatriz');
+        if (!mainApp || mainApp.style.display === 'none' || !contentMatriz || contentMatriz.classList.contains('hidden')) return;
+
+        const tbody = document.getElementById('tablaBody');
+        if (!tbody) return;
+        const rows = tbody.querySelectorAll('tr[data-row-idx]');
+        if (!rows.length) return;
+
+        // Si el foco está dentro de una celda o ya hay una celda seleccionada, navegar
+        const focusedCell = activeEl && activeEl.closest('#tablaBody td[data-row-idx]');
+        if (!focusedCell && selectedCellCoords.row < 0) return;
+
+        let r = focusedCell ? parseInt(focusedCell.getAttribute('data-row-idx'), 10) : selectedCellCoords.row;
+        let c = focusedCell ? parseInt(focusedCell.getAttribute('data-col-idx'), 10) : selectedCellCoords.col;
+        const maxRow = rows.length - 1;
+        const maxCol = COLUMNAS.length;
+
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectTableCell(r - 1, c, true);
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectTableCell(r + 1, c, true);
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            selectTableCell(r, c - 1, true);
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            selectTableCell(r, c + 1, true);
+        } else if (e.key === 'Tab') {
+            e.preventDefault();
+            if (e.shiftKey) {
+                if (c > 0) selectTableCell(r, c - 1, true);
+                else if (r > 0) selectTableCell(r - 1, maxCol, true);
+            } else {
+                if (c < maxCol) selectTableCell(r, c + 1, true);
+                else if (r < maxRow) selectTableCell(r + 1, 0, true);
+            }
+        } else if (e.key === 'Enter' || e.key === 'F2') {
+            const targetCell = rows[r]?.querySelector(`td[data-col-idx="${c}"]`);
+            if (targetCell && targetCell.classList.contains('editable-cell')) {
+                e.preventDefault();
+                triggerCellEdit(targetCell);
+            }
+        }
+    });
 
     async function agregarFila() {
         if (isReadOnlyPo()) {
@@ -4007,35 +4462,120 @@
         }
     }
 
+    async function saveBlobWithLocationDialog(blob, suggestedName, pickerTypes, fallbackTitle = 'Guardar archivo') {
+        const canUsePicker = ('showSaveFilePicker' in window) && window.isSecureContext;
+        if (canUsePicker) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName,
+                    types: pickerTypes
+                });
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                mostrarNotificacion(`Guardado como "${handle.name || suggestedName}"`, "success");
+                return true;
+            } catch (err) {
+                if (err && err.name === 'AbortError') {
+                    mostrarNotificacion("Guardado cancelado", "info");
+                    return false;
+                }
+            }
+        }
+
+        // Fallback cuando el navegador o contexto no soporta showSaveFilePicker:
+        // permite confirmar/editar nombre del archivo antes de disparar la descarga en la carpeta del navegador
+        const chosenName = await customPrompt(
+            fallbackTitle,
+            'Elige o confirma el nombre del archivo a guardar (se guardará en la carpeta de descargas configurada en tu navegador):',
+            suggestedName
+        );
+        if (chosenName === null) {
+            mostrarNotificacion("Guardado cancelado", "info");
+            return false;
+        }
+        const finalName = (chosenName || suggestedName).trim() || suggestedName;
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.href = url;
+        link.download = finalName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        mostrarNotificacion(`Descargando "${finalName}"`, "success");
+        return true;
+    }
+
     async function exportarExcel() {
         const rows = getDataFiltrada();
         if (!rows.length) { alert("No hay datos para exportar"); return; }
+        if (typeof XLSX === 'undefined') {
+            alert("No se pudo cargar la librería para generar archivos .xlsx");
+            return;
+        }
+
+        const isConsolidated = activeMatrixId === CONSOLIDATED_MATRIX_ID;
+        const activeTabObj = matricesList.find(m => m.id === activeMatrixId);
+        const rawSheetTitle = isConsolidated ? "Matriz General" : (activeTabObj ? activeTabObj.title : "Mapeo de Procesos");
+        const sheetName = rawSheetTitle.replace(/[:\\/?*\[\]]/g, " ").trim().slice(0, 31) || "Mapeo de Procesos";
+        const safeFileBase = rawSheetTitle.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_-]+/g, "_").replace(/^_+|_+$/g, "") || "Mapa_de_procesos";
+        const fileName = `${safeFileBase}.xlsx`;
+
         const headers = COLUMNAS.map(c => c.label);
-        let filas = [headers];
-        rows.forEach(item => filas.push(COLUMNAS.map(c => item[c.field] || '')));
-        let csv = filas.map(fila => fila.map(c => {
-            let cld = String(c);
-            if (cld.includes(',') || cld.includes('"') || cld.includes('\n')) cld = `"${cld.replace(/"/g, '""')}"`;
-            return cld;
-        }).join(',')).join('\n');
-        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = "Mapa_de_procesos.csv";
-        link.click();
-        URL.revokeObjectURL(link.href);
+        if (isConsolidated) headers.push("Matriz Origen");
+
+        const aoa = [headers];
+        rows.forEach(item => {
+            const rowValues = COLUMNAS.map(c => item[c.field] || '');
+            if (isConsolidated) rowValues.push(item._sourceMatrixTitle || '');
+            aoa.push(rowValues);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        const colsMeta = COLUMNAS.map(c => ({ wch: Math.max(14, Math.min(55, Math.round(getColWidth(c.field) / 7))) }));
+        if (isConsolidated) colsMeta.push({ wch: 22 });
+        ws['!cols'] = colsMeta;
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([wbArray], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        });
+
+        await saveBlobWithLocationDialog(
+            blob,
+            fileName,
+            [{
+                description: 'Libro de Excel (.xlsx)',
+                accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }
+            }],
+            'Guardar Excel (.xlsx)'
+        );
     }
 
     async function exportarJSON() {
         const rows = getDataFiltrada();
         if (!rows.length) { alert("No hay datos para exportar"); return; }
+        const isConsolidated = activeMatrixId === CONSOLIDATED_MATRIX_ID;
+        const activeTabObj = matricesList.find(m => m.id === activeMatrixId);
+        const rawTitle = isConsolidated ? "Matriz_General" : (activeTabObj ? activeTabObj.title : "Mapa_de_procesos");
+        const safeFileBase = rawTitle.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_-]+/g, "_").replace(/^_+|_+$/g, "") || "Mapa_de_procesos";
+        const fileName = `${safeFileBase}.json`;
+
         const data = rows.map(({ id, _sourceMatrixId, _sourceMatrixTitle, ...rest }) => rest);
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = "Mapa_de_procesos.json";
-        link.click();
-        URL.revokeObjectURL(link.href);
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8;" });
+
+        await saveBlobWithLocationDialog(
+            blob,
+            fileName,
+            [{
+                description: 'Archivo JSON (.json)',
+                accept: { 'application/json': ['.json'] }
+            }],
+            'Guardar JSON (.json)'
+        );
     }
 
     function importarJSON() {
@@ -4318,6 +4858,7 @@
         $id('loginScreen').style.display = 'none';
         $id('mainApp').style.display = 'block';
         updateNavbarRoleControls();
+        startPoLiveWatcher();
         iniciarAppCompleta();
 
         ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(ev => {
@@ -4347,6 +4888,7 @@
         localStorage.removeItem("bia_active_po_id");
         if (sessionTimeout) clearTimeout(sessionTimeout);
         if (timerInterval) clearInterval(timerInterval);
+        if (poWatchInterval) { clearInterval(poWatchInterval); poWatchInterval = null; }
 
         ['click', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(ev => {
             document.removeEventListener(ev, resetSessionTimer);
